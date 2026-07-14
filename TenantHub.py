@@ -17,12 +17,10 @@ st.set_page_config(
 # ==================== SKY BLUE CUSTOM CSS ====================
 st.markdown("""
 <style>
-    /* Main background */
     .stApp {
         background: linear-gradient(135deg, #E8F4FD 0%, #B8D8F0 100%);
     }
     
-    /* Header */
     .main-header {
         background: linear-gradient(135deg, #4A90D9 0%, #6CB4EE 100%);
         color: white;
@@ -30,13 +28,11 @@ st.markdown("""
         border-radius: 15px;
         margin-bottom: 2rem;
         box-shadow: 0 8px 32px rgba(74,144,217,0.3);
-        animation: slideDown 0.5s ease-out;
     }
     .main-header h1 {
         margin: 0;
         font-size: 2.8rem;
         font-weight: 700;
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
     }
     .main-header p {
         margin: 0.5rem 0 0 0;
@@ -44,7 +40,6 @@ st.markdown("""
         font-size: 1.2rem;
     }
     
-    /* Cards */
     .dashboard-card {
         background: white;
         padding: 1.5rem;
@@ -53,7 +48,6 @@ st.markdown("""
         margin-bottom: 1rem;
         border-left: 5px solid #4A90D9;
         transition: all 0.3s ease;
-        animation: fadeInUp 0.6s ease-out;
     }
     .dashboard-card:hover {
         transform: translateY(-5px);
@@ -80,7 +74,6 @@ st.markdown("""
         font-weight: 600;
     }
     
-    /* Status badges */
     .status-badge {
         display: inline-block;
         padding: 0.35rem 1rem;
@@ -96,7 +89,6 @@ st.markdown("""
     .status-paid { background: #D5F5E3; color: #1A7A3A; border: 2px solid #2ECC71; }
     .status-overdue { background: #FADBD8; color: #7B241C; border: 2px solid #E74C3C; }
     
-    /* Buttons */
     .stButton > button {
         background: linear-gradient(135deg, #4A90D9, #6CB4EE);
         color: white;
@@ -112,23 +104,6 @@ st.markdown("""
         box-shadow: 0 4px 15px rgba(74,144,217,0.4);
     }
     
-    /* Animations */
-    @keyframes slideDown {
-        from { opacity: 0; transform: translateY(-30px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes fadeInUp {
-        from { opacity: 0; transform: translateY(20px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-    
-    /* Sidebar */
-    .css-1d391kg {
-        background: white;
-        border-right: 2px solid #D6EAF8;
-    }
-    
-    /* Login box */
     .login-box {
         background: white;
         padding: 3rem;
@@ -136,7 +111,6 @@ st.markdown("""
         box-shadow: 0 10px 40px rgba(74,144,217,0.2);
         max-width: 400px;
         margin: 2rem auto;
-        animation: fadeInUp 0.8s ease-out;
     }
     .login-box h2 {
         text-align: center;
@@ -144,32 +118,6 @@ st.markdown("""
         margin-bottom: 2rem;
     }
     
-    /* Data tables */
-    .dataframe {
-        border-radius: 10px;
-        overflow: hidden;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-    }
-    .dataframe thead {
-        background: linear-gradient(135deg, #4A90D9, #6CB4EE);
-        color: white;
-    }
-    
-    /* Upload area */
-    .upload-area {
-        border: 2px dashed #4A90D9;
-        border-radius: 15px;
-        padding: 2rem;
-        text-align: center;
-        background: #F0F8FF;
-        transition: all 0.3s ease;
-    }
-    .upload-area:hover {
-        background: #D6EAF8;
-        border-color: #6CB4EE;
-    }
-    
-    /* Expander */
     .streamlit-expanderHeader {
         background: linear-gradient(135deg, #E8F4FD, #D6EAF8);
         border-radius: 10px;
@@ -226,55 +174,72 @@ def logout():
         st.rerun()
 
 # ==================== DATA MANAGEMENT ====================
+def get_default_tenants():
+    """Return default tenants DataFrame"""
+    return pd.DataFrame({
+        'ID': [1, 2, 3, 4, 5],
+        'Name': ['John Smith', 'Sarah Johnson', 'Mike Davis', 'Emily Brown', 'David Wilson'],
+        'Email': ['john@email.com', 'sarah@email.com', 'mike@email.com', 'emily@email.com', 'david@email.com'],
+        'Phone': ['(555) 123-4567', '(555) 234-5678', '(555) 345-6789', '(555) 456-7890', '(555) 567-8901'],
+        'Unit': ['3B', '7C', '12A', '5D', '9E'],
+        'Status': ['Active', 'Active', 'Pending', 'Active', 'Active'],
+        'Rent': [1200, 1400, 1600, 1100, 1500],
+        'Lease_Start': ['2024-01-01', '2024-03-15', '2024-06-01', '2023-11-01', '2024-02-01'],
+        'Lease_End': ['2024-12-31', '2025-03-14', '2025-05-31', '2024-10-31', '2025-01-31']
+    })
+
+def get_default_properties():
+    """Return default properties DataFrame"""
+    return pd.DataFrame({
+        'ID': [1, 2, 3, 4, 5],
+        'Address': ['123 Main St', '456 Oak Ave', '789 Pine Rd', '321 Elm St', '654 Maple Dr'],
+        'City': ['Springfield', 'Riverside', 'Lakewood', 'Springfield', 'Riverside'],
+        'Type': ['Apartment', 'Townhouse', 'Apartment', 'Duplex', 'Single Family'],
+        'Units': [12, 8, 16, 6, 4],
+        'Occupancy': [10, 7, 15, 5, 4]
+    })
+
+def get_default_maintenance():
+    """Return default maintenance DataFrame"""
+    return pd.DataFrame({
+        'ID': ['M-001', 'M-002', 'M-003', 'M-004'],
+        'Unit': ['3B', '7C', '12A', '5D'],
+        'Issue': ['Leaky faucet in kitchen', 'Broken AC unit', 'Electrical outlet not working', 'Water heater malfunction'],
+        'Status': ['In Progress', 'New', 'Active', 'Completed'],
+        'Priority': ['Medium', 'High', 'Low', 'High'],
+        'Reported': ['2024-10-20', '2024-10-22', '2024-10-21', '2024-10-18'],
+        'Tenant': ['John Smith', 'Sarah Johnson', 'Mike Davis', 'Emily Brown']
+    })
+
+def get_default_payments():
+    """Return default payments DataFrame"""
+    return pd.DataFrame({
+        'ID': [1, 2, 3, 4],
+        'Tenant': ['John Smith', 'Sarah Johnson', 'Emily Brown', 'David Wilson'],
+        'Unit': ['3B', '7C', '5D', '9E'],
+        'Amount': [1200, 1400, 1100, 1500],
+        'Date': ['2024-10-01', '2024-10-05', '2024-10-10', '2024-10-15'],
+        'Status': ['Paid', 'Paid', 'Pending', 'Paid']
+    })
+
 def init_data():
-    """Initialize data with sample records"""
-    if 'tenants' not in st.session_state:
-        st.session_state.tenants = pd.DataFrame({
-            'ID': [1, 2, 3, 4, 5],
-            'Name': ['John Smith', 'Sarah Johnson', 'Mike Davis', 'Emily Brown', 'David Wilson'],
-            'Email': ['john@email.com', 'sarah@email.com', 'mike@email.com', 'emily@email.com', 'david@email.com'],
-            'Phone': ['(555) 123-4567', '(555) 234-5678', '(555) 345-6789', '(555) 456-7890', '(555) 567-8901'],
-            'Unit': ['3B', '7C', '12A', '5D', '9E'],
-            'Status': ['Active', 'Active', 'Pending', 'Active', 'Active'],
-            'Rent': [1200, 1400, 1600, 1100, 1500],
-            'Lease_Start': ['2024-01-01', '2024-03-15', '2024-06-01', '2023-11-01', '2024-02-01'],
-            'Lease_End': ['2024-12-31', '2025-03-14', '2025-05-31', '2024-10-31', '2025-01-31']
-        })
+    """Initialize data with proper DataFrames"""
+    # Check if data exists and is a DataFrame, if not reinitialize
+    if 'tenants' not in st.session_state or not isinstance(st.session_state.tenants, pd.DataFrame):
+        st.session_state.tenants = get_default_tenants()
     
-    if 'properties' not in st.session_state:
-        st.session_state.properties = pd.DataFrame({
-            'ID': [1, 2, 3, 4, 5],
-            'Address': ['123 Main St', '456 Oak Ave', '789 Pine Rd', '321 Elm St', '654 Maple Dr'],
-            'City': ['Springfield', 'Riverside', 'Lakewood', 'Springfield', 'Riverside'],
-            'Type': ['Apartment', 'Townhouse', 'Apartment', 'Duplex', 'Single Family'],
-            'Units': [12, 8, 16, 6, 4],
-            'Occupancy': [10, 7, 15, 5, 4]
-        })
+    if 'properties' not in st.session_state or not isinstance(st.session_state.properties, pd.DataFrame):
+        st.session_state.properties = get_default_properties()
     
-    if 'maintenance' not in st.session_state:
-        st.session_state.maintenance = pd.DataFrame({
-            'ID': ['M-001', 'M-002', 'M-003', 'M-004'],
-            'Unit': ['3B', '7C', '12A', '5D'],
-            'Issue': ['Leaky faucet in kitchen', 'Broken AC unit', 'Electrical outlet not working', 'Water heater malfunction'],
-            'Status': ['In Progress', 'New', 'Active', 'Completed'],
-            'Priority': ['Medium', 'High', 'Low', 'High'],
-            'Reported': ['2024-10-20', '2024-10-22', '2024-10-21', '2024-10-18'],
-            'Tenant': ['John Smith', 'Sarah Johnson', 'Mike Davis', 'Emily Brown']
-        })
+    if 'maintenance' not in st.session_state or not isinstance(st.session_state.maintenance, pd.DataFrame):
+        st.session_state.maintenance = get_default_maintenance()
     
-    if 'payments' not in st.session_state:
-        st.session_state.payments = pd.DataFrame({
-            'ID': [1, 2, 3, 4],
-            'Tenant': ['John Smith', 'Sarah Johnson', 'Emily Brown', 'David Wilson'],
-            'Unit': ['3B', '7C', '5D', '9E'],
-            'Amount': [1200, 1400, 1100, 1500],
-            'Date': ['2024-10-01', '2024-10-05', '2024-10-10', '2024-10-15'],
-            'Status': ['Paid', 'Paid', 'Pending', 'Paid']
-        })
+    if 'payments' not in st.session_state or not isinstance(st.session_state.payments, pd.DataFrame):
+        st.session_state.payments = get_default_payments()
 
 def download_csv(df, filename):
     """Create CSV download button"""
-    if df is not None and not df.empty:
+    if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
         csv = df.to_csv(index=False)
         st.download_button(
             label=f"📥 Download {filename}",
@@ -336,17 +301,17 @@ def show_metrics():
     properties_df = st.session_state.properties
     maintenance_df = st.session_state.maintenance
     
-    total_tenants = len(tenants_df) if not tenants_df.empty else 0
-    total_properties = len(properties_df) if not properties_df.empty else 0
-    total_revenue = tenants_df['Rent'].sum() if not tenants_df.empty else 0
-    active_maintenance = len(maintenance_df[maintenance_df['Status'] != 'Completed']) if not maintenance_df.empty else 0
+    total_tenants = len(tenants_df) if isinstance(tenants_df, pd.DataFrame) and not tenants_df.empty else 0
+    total_properties = len(properties_df) if isinstance(properties_df, pd.DataFrame) and not properties_df.empty else 0
+    total_revenue = tenants_df['Rent'].sum() if isinstance(tenants_df, pd.DataFrame) and not tenants_df.empty else 0
+    active_maintenance = len(maintenance_df[maintenance_df['Status'] != 'Completed']) if isinstance(maintenance_df, pd.DataFrame) and not maintenance_df.empty else 0
     
     with col1:
         st.markdown(f"""
         <div class="dashboard-card green">
             <div class="metric-label">👥 Total Tenants</div>
             <div class="metric-value">{total_tenants}</div>
-            <div style="font-size: 0.85rem; color: #555;">Active: {len(tenants_df[tenants_df['Status'] == 'Active']) if not tenants_df.empty else 0}</div>
+            <div style="font-size: 0.85rem; color: #555;">Active: {len(tenants_df[tenants_df['Status'] == 'Active']) if isinstance(tenants_df, pd.DataFrame) and not tenants_df.empty else 0}</div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -355,7 +320,7 @@ def show_metrics():
         <div class="dashboard-card orange">
             <div class="metric-label">🏠 Properties</div>
             <div class="metric-value">{total_properties}</div>
-            <div style="font-size: 0.85rem; color: #555;">Total Units: {properties_df['Units'].sum() if not properties_df.empty else 0}</div>
+            <div style="font-size: 0.85rem; color: #555;">Total Units: {properties_df['Units'].sum() if isinstance(properties_df, pd.DataFrame) and not properties_df.empty else 0}</div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -422,7 +387,7 @@ def show_tenants():
             download_csv(st.session_state.tenants, 'tenants.csv')
             upload_csv('Tenants')
     
-    if not st.session_state.tenants.empty:
+    if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
         search = st.text_input("🔍 Search tenants", placeholder="Search by name or unit...")
         
         filtered_df = st.session_state.tenants.copy()
@@ -474,7 +439,7 @@ def show_properties():
             download_csv(st.session_state.properties, 'properties.csv')
             upload_csv('Properties')
     
-    if not st.session_state.properties.empty:
+    if isinstance(st.session_state.properties, pd.DataFrame) and not st.session_state.properties.empty:
         st.dataframe(st.session_state.properties, use_container_width=True, height=400)
     else:
         st.info("No properties added yet.")
@@ -518,7 +483,7 @@ def show_maintenance():
             download_csv(st.session_state.maintenance, 'maintenance.csv')
             upload_csv('Maintenance')
     
-    if not st.session_state.maintenance.empty:
+    if isinstance(st.session_state.maintenance, pd.DataFrame) and not st.session_state.maintenance.empty:
         priority_filter = st.selectbox("Filter by priority", ["All", "High", "Medium", "Low"])
         
         filtered_df = st.session_state.maintenance.copy()
@@ -567,7 +532,7 @@ def show_payments():
             download_csv(st.session_state.payments, 'payments.csv')
             upload_csv('Payments')
     
-    if not st.session_state.payments.empty:
+    if isinstance(st.session_state.payments, pd.DataFrame) and not st.session_state.payments.empty:
         total_collected = st.session_state.payments[st.session_state.payments['Status'] == 'Paid']['Amount'].sum()
         
         col1, col2, col3 = st.columns(3)
@@ -605,13 +570,12 @@ def show_sidebar():
         
         st.markdown("---")
         
-        # Quick stats
         st.markdown("### 📊 Quick Stats")
         col1, col2 = st.columns(2)
         with col1:
-            st.metric("Tenants", len(st.session_state.tenants))
+            st.metric("Tenants", len(st.session_state.tenants) if isinstance(st.session_state.tenants, pd.DataFrame) else 0)
         with col2:
-            st.metric("Properties", len(st.session_state.properties))
+            st.metric("Properties", len(st.session_state.properties) if isinstance(st.session_state.properties, pd.DataFrame) else 0)
         
         st.markdown("---")
         logout()
