@@ -140,20 +140,27 @@ st.markdown("""
         box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4) !important;
     }
     
-    /* Login box */
+    /* Login box - Compact */
     .login-box {
         background: rgba(255, 255, 255, 0.95);
-        padding: 3rem;
+        padding: 2rem 2.5rem;
         border-radius: 20px;
         box-shadow: 0 10px 40px rgba(0,0,0,0.3);
-        max-width: 400px;
-        margin: 2rem auto;
+        max-width: 380px;
+        margin: 1rem auto;
         backdrop-filter: blur(10px);
     }
     .login-box h2 {
         text-align: center;
         color: #1B3A7A;
-        margin-bottom: 2rem;
+        margin-bottom: 1.5rem;
+        font-size: 1.5rem;
+    }
+    .login-box .stTextInput > div {
+        margin-bottom: 0.5rem;
+    }
+    .login-box .stButton > button {
+        margin-top: 0.5rem;
     }
     
     /* Expander */
@@ -201,6 +208,23 @@ st.markdown("""
         padding-bottom: 0.5rem !important;
         border-bottom: 3px solid #4A90D9 !important;
     }
+    
+    /* Compact login title */
+    .login-title {
+        text-align: center;
+        padding: 0.5rem 0;
+    }
+    .login-title h1 {
+        color: white;
+        font-size: 2.5rem;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        margin: 0;
+    }
+    .login-title p {
+        color: rgba(255,255,255,0.9);
+        font-size: 1rem;
+        margin: 0.2rem 0 0 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -215,10 +239,11 @@ def check_auth():
     return True
 
 def show_login():
+    # Compact login header
     st.markdown("""
-    <div style="text-align: center; padding: 2rem 0;">
-        <h1 style="color: white; font-size: 3rem; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">🏠 TenantHub</h1>
-        <p style="color: rgba(255,255,255,0.9); font-size: 1.2rem;">Property Management System</p>
+    <div class="login-title">
+        <h1>🏠 TenantHub</h1>
+        <p>Property Management System</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -237,11 +262,6 @@ def show_login():
             else:
                 st.error("❌ Invalid credentials!")
         
-        st.markdown("""
-        <div style="text-align: center; margin-top: 1rem; color: #999; font-size: 0.9rem;">
-            <p>Default: admin / admin123</p>
-        </div>
-        """, unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
         st.stop()
 
@@ -490,7 +510,6 @@ def show_tenants():
                 filtered_df['Unit'].str.contains(search, case=False, na=False)
             ]
         
-        # Display with edit/delete buttons
         for idx, row in filtered_df.iterrows():
             col1, col2, col3, col4, col5 = st.columns([2, 1.5, 1, 1, 1])
             
@@ -512,9 +531,7 @@ def show_tenants():
                 st.markdown(f'<span class="status-badge {status_class}">{row["Status"]}</span>', unsafe_allow_html=True)
             
             with col4:
-                # Edit button opens expander
                 if st.button(f"✏️ Edit", key=f"edit_tenant_{row['ID']}_{idx}", use_container_width=True):
-                    # Create edit form
                     with st.expander(f"✏️ Editing: {row['Name']}", expanded=True):
                         col_a, col_b = st.columns(2)
                         
