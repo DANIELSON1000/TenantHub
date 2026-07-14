@@ -5,13 +5,20 @@ import os
 import json
 from datetime import datetime, timedelta
 import hashlib
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter, A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 import base64
+
+# Try to import reportlab, fallback to simple text if not available
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter, A4
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
+    st.warning("📄 ReportLab not installed. Using simple text agreement format.")
 
 # ==================== PAGE CONFIGURATION ====================
 st.set_page_config(
@@ -392,116 +399,195 @@ def generate_payment_dates(move_in_date):
 # ==================== PDF AGREEMENT GENERATOR ====================
 def generate_agreement_pdf(tenant_name, unit, rent, move_in_date):
     """Generate a rental agreement PDF with terms and conditions"""
+    if REPORTLAB_AVAILABLE:
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=72)
+        
+        styles = getSampleStyleSheet()
+        styles.add(ParagraphStyle(
+            name='CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            textColor=colors.HexColor('#1B3A7A'),
+            alignment=TA_CENTER,
+            spaceAfter=30
+        ))
+        styles.add(ParagraphStyle(
+            name='CustomHeading',
+            parent=styles['Heading2'],
+            fontSize=16,
+            textColor=colors.HexColor('#1B3A7A'),
+            spaceAfter=12,
+            spaceBefore=12
+        ))
+        styles.add(ParagraphStyle(
+            name='CustomBody',
+            parent=styles['Normal'],
+            fontSize=11,
+            textColor=colors.black,
+            spaceAfter=6,
+            alignment=TA_LEFT
+        ))
+        styles.add(ParagraphStyle(
+            name='CustomFooter',
+            parent=styles['Normal'],
+            fontSize=10,
+            textColor=colors.grey,
+            alignment=TA_CENTER,
+            spaceBefore=30
+        ))
+        
+        # Build the document
+        story = []
+        
+        # Title
+        story.append(Paragraph("RENTAL AGREEMENT", styles['CustomTitle']))
+        story.append(Spacer(1, 0.25*inch))
+        
+        # Date
+        story.append(Paragraph(f"Date: {datetime.now().strftime('%B %d, %Y')}", styles['CustomBody']))
+        story.append(Spacer(1, 0.25*inch))
+        
+        # Parties
+        story.append(Paragraph("PARTIES", styles['CustomHeading']))
+        story.append(Paragraph(f"This Rental Agreement is made between TenantHub Property Management (hereinafter referred to as 'Landlord') and {tenant_name} (hereinafter referred to as 'Tenant').", styles['CustomBody']))
+        story.append(Spacer(1, 0.25*inch))
+        
+        # Property Details
+        story.append(Paragraph("PROPERTY DETAILS", styles['CustomHeading']))
+        story.append(Paragraph(f"Property Unit: {unit}", styles['CustomBody']))
+        story.append(Paragraph(f"Monthly Rent: ${rent:.2f}", styles['CustomBody']))
+        story.append(Paragraph(f"Move-in Date: {move_in_date}", styles['CustomBody']))
+        story.append(Spacer(1, 0.25*inch))
+        
+        # Terms and Conditions
+        story.append(Paragraph("TERMS AND CONDITIONS", styles['CustomHeading']))
+        
+        terms = [
+            "1. RENT PAYMENT: Tenant agrees to pay the monthly rent on or before the 1st day of each month. Rent is due on the same day each month as the move-in date.",
+            "2. LATE PAYMENT: A late fee of $50 will be charged if rent is not received within 5 days after the due date.",
+            "3. SECURITY DEPOSIT: A security deposit equal to one month's rent is required and will be held by Landlord.",
+            "4. UTILITIES: Tenant is responsible for all utility costs including electricity, water, gas, and internet.",
+            "5. MAINTENANCE: Tenant agrees to maintain the property in good condition and report any issues immediately.",
+            "6. PETS: Pets are allowed only with prior written consent and additional pet deposit.",
+            "7. SUBLEASING: Subleasing is not permitted without written consent from Landlord.",
+            "8. NOTICE: Either party must provide 30 days written notice to terminate this agreement.",
+            "9. RENT INCREASE: Rent may be increased with 60 days written notice.",
+            "10. GOVERNING LAW: This agreement is governed by the laws of the state.",
+            "11. ENTIRE AGREEMENT: This document represents the entire agreement between parties.",
+            "12. AMENDMENTS: Any amendments must be in writing and signed by both parties."
+        ]
+        
+        for term in terms:
+            story.append(Paragraph(term, styles['CustomBody']))
+        
+        story.append(Spacer(1, 0.25*inch))
+        
+        # Signatures
+        story.append(Paragraph("SIGNATURES", styles['CustomHeading']))
+        story.append(Spacer(1, 0.25*inch))
+        
+        signature_data = [
+            ["Landlord Signature:", "", "Date:", ""],
+            ["________________________", "", "______________", ""],
+            ["", "", "", ""],
+            ["Tenant Signature:", "", "Date:", ""],
+            ["________________________", "", "______________", ""]
+        ]
+        
+        sig_table = Table(signature_data, colWidths=[2.5*inch, 0.5*inch, 1.5*inch, 0.5*inch])
+        sig_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 11),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        story.append(sig_table)
+        
+        story.append(Spacer(1, 0.5*inch))
+        
+        # Footer
+        story.append(Paragraph("This agreement is legally binding. Please keep a copy for your records.", styles['CustomFooter']))
+        
+        # Build PDF
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+    else:
+        # Fallback: Create a simple text agreement
+        return generate_text_agreement(tenant_name, unit, rent, move_in_date)
+
+def generate_text_agreement(tenant_name, unit, rent, move_in_date):
+    """Generate a simple text agreement as fallback"""
+    content = f"""
+    ========================================
+              RENTAL AGREEMENT
+    ========================================
+    
+    Date: {datetime.now().strftime('%B %d, %Y')}
+    
+    PARTIES
+    --------
+    This Rental Agreement is made between TenantHub Property Management 
+    (hereinafter referred to as 'Landlord') and {tenant_name} 
+    (hereinafter referred to as 'Tenant').
+    
+    PROPERTY DETAILS
+    -----------------
+    Property Unit: {unit}
+    Monthly Rent: ${rent:.2f}
+    Move-in Date: {move_in_date}
+    
+    TERMS AND CONDITIONS
+    --------------------
+    1. RENT PAYMENT: Tenant agrees to pay the monthly rent on or before the 
+       1st day of each month. Rent is due on the same day each month as the 
+       move-in date.
+    
+    2. LATE PAYMENT: A late fee of $50 will be charged if rent is not received 
+       within 5 days after the due date.
+    
+    3. SECURITY DEPOSIT: A security deposit equal to one month's rent is 
+       required and will be held by Landlord.
+    
+    4. UTILITIES: Tenant is responsible for all utility costs including 
+       electricity, water, gas, and internet.
+    
+    5. MAINTENANCE: Tenant agrees to maintain the property in good condition 
+       and report any issues immediately.
+    
+    6. PETS: Pets are allowed only with prior written consent and additional 
+       pet deposit.
+    
+    7. SUBLEASING: Subleasing is not permitted without written consent from 
+       Landlord.
+    
+    8. NOTICE: Either party must provide 30 days written notice to terminate 
+       this agreement.
+    
+    9. RENT INCREASE: Rent may be increased with 60 days written notice.
+    
+    10. GOVERNING LAW: This agreement is governed by the laws of the state.
+    
+    11. ENTIRE AGREEMENT: This document represents the entire agreement 
+        between parties.
+    
+    12. AMENDMENTS: Any amendments must be in writing and signed by both 
+        parties.
+    
+    SIGNATURES
+    -----------
+    Landlord Signature: ____________________   Date: ______________
+    
+    Tenant Signature:  ____________________   Date: ______________
+    
+    ========================================
+    This agreement is legally binding. 
+    Please keep a copy for your records.
+    ========================================
+    """
+    
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=72)
-    
-    styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(
-        name='CustomTitle',
-        parent=styles['Heading1'],
-        fontSize=24,
-        textColor=colors.HexColor('#1B3A7A'),
-        alignment=TA_CENTER,
-        spaceAfter=30
-    ))
-    styles.add(ParagraphStyle(
-        name='CustomHeading',
-        parent=styles['Heading2'],
-        fontSize=16,
-        textColor=colors.HexColor('#1B3A7A'),
-        spaceAfter=12,
-        spaceBefore=12
-    ))
-    styles.add(ParagraphStyle(
-        name='CustomBody',
-        parent=styles['Normal'],
-        fontSize=11,
-        textColor=colors.black,
-        spaceAfter=6,
-        alignment=TA_LEFT
-    ))
-    styles.add(ParagraphStyle(
-        name='CustomFooter',
-        parent=styles['Normal'],
-        fontSize=10,
-        textColor=colors.grey,
-        alignment=TA_CENTER,
-        spaceBefore=30
-    ))
-    
-    # Build the document
-    story = []
-    
-    # Title
-    story.append(Paragraph("RENTAL AGREEMENT", styles['CustomTitle']))
-    story.append(Spacer(1, 0.25*inch))
-    
-    # Date
-    story.append(Paragraph(f"Date: {datetime.now().strftime('%B %d, %Y')}", styles['CustomBody']))
-    story.append(Spacer(1, 0.25*inch))
-    
-    # Parties
-    story.append(Paragraph("PARTIES", styles['CustomHeading']))
-    story.append(Paragraph(f"This Rental Agreement is made between TenantHub Property Management (hereinafter referred to as 'Landlord') and {tenant_name} (hereinafter referred to as 'Tenant').", styles['CustomBody']))
-    story.append(Spacer(1, 0.25*inch))
-    
-    # Property Details
-    story.append(Paragraph("PROPERTY DETAILS", styles['CustomHeading']))
-    story.append(Paragraph(f"Property Unit: {unit}", styles['CustomBody']))
-    story.append(Paragraph(f"Monthly Rent: ${rent:.2f}", styles['CustomBody']))
-    story.append(Paragraph(f"Move-in Date: {move_in_date}", styles['CustomBody']))
-    story.append(Spacer(1, 0.25*inch))
-    
-    # Terms and Conditions
-    story.append(Paragraph("TERMS AND CONDITIONS", styles['CustomHeading']))
-    
-    terms = [
-        "1. RENT PAYMENT: Tenant agrees to pay the monthly rent on or before the 1st day of each month. Rent is due on the same day each month as the move-in date.",
-        "2. LATE PAYMENT: A late fee of $50 will be charged if rent is not received within 5 days after the due date.",
-        "3. SECURITY DEPOSIT: A security deposit equal to one month's rent is required and will be held by Landlord.",
-        "4. UTILITIES: Tenant is responsible for all utility costs including electricity, water, gas, and internet.",
-        "5. MAINTENANCE: Tenant agrees to maintain the property in good condition and report any issues immediately.",
-        "6. PETS: Pets are allowed only with prior written consent and additional pet deposit.",
-        "7. SUBLEASING: Subleasing is not permitted without written consent from Landlord.",
-        "8. NOTICE: Either party must provide 30 days written notice to terminate this agreement.",
-        "9. RENT INCREASE: Rent may be increased with 60 days written notice.",
-        "10. GOVERNING LAW: This agreement is governed by the laws of the state.",
-        "11. ENTIRE AGREEMENT: This document represents the entire agreement between parties.",
-        "12. AMENDMENTS: Any amendments must be in writing and signed by both parties."
-    ]
-    
-    for term in terms:
-        story.append(Paragraph(term, styles['CustomBody']))
-    
-    story.append(Spacer(1, 0.25*inch))
-    
-    # Signatures
-    story.append(Paragraph("SIGNATURES", styles['CustomHeading']))
-    story.append(Spacer(1, 0.25*inch))
-    
-    signature_data = [
-        ["Landlord Signature:", "", "Date:", ""],
-        ["________________________", "", "______________", ""],
-        ["", "", "", ""],
-        ["Tenant Signature:", "", "Date:", ""],
-        ["________________________", "", "______________", ""]
-    ]
-    
-    sig_table = Table(signature_data, colWidths=[2.5*inch, 0.5*inch, 1.5*inch, 0.5*inch])
-    sig_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 0), (-1, -1), 11),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-    ]))
-    story.append(sig_table)
-    
-    story.append(Spacer(1, 0.5*inch))
-    
-    # Footer
-    story.append(Paragraph("This agreement is legally binding. Please keep a copy for your records.", styles['CustomFooter']))
-    
-    # Build PDF
-    doc.build(story)
+    buffer.write(content.encode('utf-8'))
     buffer.seek(0)
     return buffer
 
@@ -701,11 +787,12 @@ def show_tenants():
                 if st.button("📄 Generate Agreement", key="gen_agreement_btn"):
                     if name and unit and rent > 0:
                         pdf_buffer = generate_agreement_pdf(name, unit, rent, move_in_date.strftime('%Y-%m-%d'))
+                        file_extension = "pdf" if REPORTLAB_AVAILABLE else "txt"
                         st.download_button(
-                            label="📥 Download Agreement PDF",
+                            label=f"📥 Download Agreement.{file_extension}",
                             data=pdf_buffer,
-                            file_name=f"agreement_{name}_{unit}.pdf",
-                            mime="application/pdf",
+                            file_name=f"agreement_{name}_{unit}.{file_extension}",
+                            mime="application/pdf" if REPORTLAB_AVAILABLE else "text/plain",
                             use_container_width=True,
                             key=f"download_agreement_{name}"
                         )
@@ -751,11 +838,12 @@ def show_tenants():
             with col4:
                 if st.button(f"📄 Agreement", key=f"agreement_{row['ID']}_{idx}", use_container_width=True):
                     pdf_buffer = generate_agreement_pdf(row['Name'], row['Unit'], row['Rent'], row['Move_In_Date'])
+                    file_extension = "pdf" if REPORTLAB_AVAILABLE else "txt"
                     st.download_button(
-                        label="📥 Download PDF",
+                        label=f"📥 Download.{file_extension}",
                         data=pdf_buffer,
-                        file_name=f"agreement_{row['Name']}_{row['Unit']}.pdf",
-                        mime="application/pdf",
+                        file_name=f"agreement_{row['Name']}_{row['Unit']}.{file_extension}",
+                        mime="application/pdf" if REPORTLAB_AVAILABLE else "text/plain",
                         use_container_width=True,
                         key=f"download_agreement_{row['ID']}"
                     )
