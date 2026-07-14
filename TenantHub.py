@@ -6,6 +6,12 @@ import json
 from datetime import datetime, timedelta
 import hashlib
 import base64
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
+import re
 
 # Try to import reportlab, fallback to simple text if not available
 try:
@@ -18,7 +24,177 @@ try:
     REPORTLAB_AVAILABLE = True
 except ImportError:
     REPORTLAB_AVAILABLE = False
-    # Silent fallback - no warning shown
+
+# ==================== EMAIL CONFIGURATION ====================
+# Gmail App Password Configuration
+EMAIL_SENDER = "ndahabonimanadaniel13@gmail.com"
+EMAIL_PASSWORD = "xsfa ooya nbnn pofr"  # App password
+EMAIL_RECIPIENT = "ndahabonimanadaniel13@gmail.com"
+
+def send_email_report(recipient_email, subject, body, attachment=None):
+    """
+    Send email report with optional attachment
+    """
+    try:
+        # Create message
+        msg = MIMEMultipart()
+        msg['From'] = EMAIL_SENDER
+        msg['To'] = recipient_email
+        msg['Subject'] = subject
+        
+        # Attach body
+        msg.attach(MIMEText(body, 'plain'))
+        
+        # Attach file if provided
+        if attachment:
+            part = MIMEBase('application', 'octet-stream')
+            part.set_payload(attachment.getvalue())
+            encoders.encode_base64(part)
+            part.add_header(
+                'Content-Disposition',
+                f'attachment; filename= {attachment.name}'
+            )
+            msg.attach(part)
+        
+        # Send email
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(EMAIL_SENDER, EMAIL_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        
+        return True, "Email sent successfully!"
+    except Exception as e:
+        return False, f"Failed to send email: {str(e)}"
+
+def generate_tenant_report():
+    """Generate tenant report as CSV"""
+    if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
+        csv_buffer = io.BytesIO()
+        st.session_state.tenants.to_csv(csv_buffer, index=False)
+        csv_buffer.name = "tenant_report.csv"
+        return csv_buffer
+    return None
+
+def generate_payment_report():
+    """Generate payment report as CSV"""
+    if isinstance(st.session_state.payments, pd.DataFrame) and not st.session_state.payments.empty:
+        csv_buffer = io.BytesIO()
+        st.session_state.payments.to_csv(csv_buffer, index=False)
+        csv_buffer.name = "payment_report.csv"
+        return csv_buffer
+    return None
+
+def generate_full_report():
+    """Generate full system report"""
+    report = []
+    report.append("=" * 60)
+    report.append("TENANTHUB - SYSTEM REPORT")
+    report.append("=" * 60)
+    report.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    report.append("")
+    
+    # Tenants
+    report.append("TENANTS:")
+    report.append("-" * 40)
+    if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
+        for _, tenant in st.session_state.tenants.iterrows():
+            report.append(f"  • {tenant['Name']} - Unit {tenant['Unit']} - Rent: {format_currency(tenant['Rent'])}")
+    else:
+        report.append("  No tenants found")
+    report.append("")
+    
+    # Properties
+    report.append("PROPERTIES:")
+    report.append("-" * 40)
+    if isinstance(st.session_state.properties, pd.DataFrame) and not st.session_state.properties.empty:
+        for _, prop in st.session_state.properties.iterrows():
+            report.append(f"  • {prop['Address']} - {prop['Type']} - {prop['Occupancy']}/{prop['Units']} units")
+    else:
+        report.append("  No properties found")
+    report.append("")
+    
+    # Payments
+    report.append("PAYMENTS:")
+    report.append("-" * 40)
+    if isinstance(st.session_state.payments, pd.DataFrame) and not st.session_state.payments.empty:
+        total_paid = st.session_state.payments[st.session_state.payments['Status'] == 'Paid']['Amount'].sum()
+        total_pending = st.session_state.payments[st.session_state.payments['Status'] == 'Pending']['Amount'].sum()
+        report.append(f"  Total Collected: {format_currency(total_paid)}")
+        report.append(f"  Total Pending: {format_currency(total_pending)}")
+        report.append("")
+        for _, payment in st.session_state.payments.iterrows():
+            report.append(f"  • {payment['Tenant']} - Unit {payment['Unit']} - {format_currency(payment['Amount'])} - {payment['Status']}")
+    else:
+        report.append("  No payments recorded")
+    report.append("")
+    
+    # Maintenance
+    report.append("MAINTENANCE:")
+    report.append("-" * 40)
+    if isinstance(st.session_state.maintenance, pd.DataFrame) and not st.session_state.maintenance.empty():
+        open_issues = st.session_state.maintenance[st.session_state.maintenance['Status'] != 'Completed']
+        report.append(f"  Open Issues: {len(open_issues)}")
+        for _, issue in open_issues.iterrows():
+            report.append(f"  • #{issue['ID']} - {issue['Issue'][:50]}... - {issue['Status']}")
+    else:
+        report.append("  No maintenance issues")
+    
+    report.append("")
+    report.append("=" * 60)
+    report.append("End of Report")
+    
+    return "\n".join(report)
+
+def format_currency(amount):
+    """Format amount in Rwandan Francs"""
+    return f"RWF {amount:,.0f}"
+
+def send_tenant_info_email(tenant_name, email):
+    """Send tenant information via email"""
+    if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
+        tenant = st.session_state.tenants[st.session_state.tenants['Name'] == tenant_name]
+        if not tenant.empty:
+            tenant_data = tenant.iloc[0]
+            
+            # Create email body
+            body = f"""
+            TENANT INFORMATION
+            ===================
+            
+            Name: {tenant_data['Name']}
+            Email: {tenant_data['Email']}
+            Phone: {tenant_data['Phone']}
+            Unit: {tenant_data['Unit']}
+            Status: {tenant_data['Status']}
+            Monthly Rent: {format_currency(tenant_data['Rent'])}
+            Move-in Date: {tenant_data['Move_In_Date']}
+            
+            Payment History:
+            -------------------
+            """
+            
+            # Add payment history
+            if isinstance(st.session_state.payments, pd.DataFrame) and not st.session_state.payments.empty:
+                payments = st.session_state.payments[st.session_state.payments['Tenant'] == tenant_name]
+                if not payments.empty:
+                    for _, payment in payments.iterrows():
+                        body += f"\n  Date: {payment['Due_Date']} - Amount: {format_currency(payment['Amount'])} - Status: {payment['Status']}"
+                else:
+                    body += "\n  No payments recorded"
+            else:
+                body += "\n  No payments recorded"
+            
+            # Send email
+            success, message = send_email_report(
+                EMAIL_RECIPIENT,
+                f"Tenant Information - {tenant_name}",
+                body
+            )
+            
+            return success, message
+    
+    return False, "Tenant not found"
 
 # ==================== PAGE CONFIGURATION ====================
 st.set_page_config(
@@ -457,7 +633,7 @@ def generate_agreement_pdf(tenant_name, unit, rent, move_in_date):
             # Property Details
             story.append(Paragraph("PROPERTY DETAILS", styles['CustomHeading']))
             story.append(Paragraph(f"Property Unit: {unit}", styles['CustomBody']))
-            story.append(Paragraph(f"Monthly Rent: ${rent:.2f}", styles['CustomBody']))
+            story.append(Paragraph(f"Monthly Rent: {format_currency(rent)}", styles['CustomBody']))
             story.append(Paragraph(f"Move-in Date: {move_in_date}", styles['CustomBody']))
             story.append(Spacer(1, 0.25*inch))
             
@@ -466,7 +642,7 @@ def generate_agreement_pdf(tenant_name, unit, rent, move_in_date):
             
             terms = [
                 "1. RENT PAYMENT: Tenant agrees to pay the monthly rent on or before the 1st day of each month. Rent is due on the same day each month as the move-in date.",
-                "2. LATE PAYMENT: A late fee of $50 will be charged if rent is not received within 5 days after the due date.",
+                "2. LATE PAYMENT: A late fee of RWF 50,000 will be charged if rent is not received within 5 days after the due date.",
                 "3. SECURITY DEPOSIT: A security deposit equal to one month's rent is required and will be held by Landlord.",
                 "4. UTILITIES: Tenant is responsible for all utility costs including electricity, water, gas, and internet.",
                 "5. MAINTENANCE: Tenant agrees to maintain the property in good condition and report any issues immediately.",
@@ -474,7 +650,7 @@ def generate_agreement_pdf(tenant_name, unit, rent, move_in_date):
                 "7. SUBLEASING: Subleasing is not permitted without written consent from Landlord.",
                 "8. NOTICE: Either party must provide 30 days written notice to terminate this agreement.",
                 "9. RENT INCREASE: Rent may be increased with 60 days written notice.",
-                "10. GOVERNING LAW: This agreement is governed by the laws of the state.",
+                "10. GOVERNING LAW: This agreement is governed by the laws of Rwanda.",
                 "11. ENTIRE AGREEMENT: This document represents the entire agreement between parties.",
                 "12. AMENDMENTS: Any amendments must be in writing and signed by both parties."
             ]
@@ -514,10 +690,8 @@ def generate_agreement_pdf(tenant_name, unit, rent, move_in_date):
             buffer.seek(0)
             return buffer
         except Exception as e:
-            # If PDF generation fails, fallback to text
             return generate_text_agreement(tenant_name, unit, rent, move_in_date)
     else:
-        # Fallback: Create a simple text agreement
         return generate_text_agreement(tenant_name, unit, rent, move_in_date)
 
 def generate_text_agreement(tenant_name, unit, rent, move_in_date):
@@ -538,7 +712,7 @@ def generate_text_agreement(tenant_name, unit, rent, move_in_date):
     PROPERTY DETAILS
     -----------------
     Property Unit: {unit}
-    Monthly Rent: ${rent:.2f}
+    Monthly Rent: {format_currency(rent)}
     Move-in Date: {move_in_date}
     
     TERMS AND CONDITIONS
@@ -547,8 +721,8 @@ def generate_text_agreement(tenant_name, unit, rent, move_in_date):
        1st day of each month. Rent is due on the same day each month as the 
        move-in date.
     
-    2. LATE PAYMENT: A late fee of $50 will be charged if rent is not received 
-       within 5 days after the due date.
+    2. LATE PAYMENT: A late fee of RWF 50,000 will be charged if rent is not 
+       received within 5 days after the due date.
     
     3. SECURITY DEPOSIT: A security deposit equal to one month's rent is 
        required and will be held by Landlord.
@@ -570,7 +744,7 @@ def generate_text_agreement(tenant_name, unit, rent, move_in_date):
     
     9. RENT INCREASE: Rent may be increased with 60 days written notice.
     
-    10. GOVERNING LAW: This agreement is governed by the laws of the state.
+    10. GOVERNING LAW: This agreement is governed by the laws of Rwanda.
     
     11. ENTIRE AGREEMENT: This document represents the entire agreement 
         between parties.
@@ -624,6 +798,71 @@ def delete_payment(payment_id):
     st.success("✅ Payment deleted successfully!")
     st.rerun()
 
+# ==================== EMAIL REPORT FUNCTIONS ====================
+def show_email_report_section():
+    """Display email report section in sidebar or main area"""
+    st.markdown("### 📧 Email Reports")
+    
+    # Send full report
+    if st.button("📊 Send Full Report", use_container_width=True):
+        report_text = generate_full_report()
+        success, message = send_email_report(
+            EMAIL_RECIPIENT,
+            f"TenantHub Full Report - {datetime.now().strftime('%Y-%m-%d')}",
+            report_text
+        )
+        if success:
+            st.success("✅ Full report sent successfully!")
+        else:
+            st.error(f"❌ {message}")
+    
+    # Send tenant report
+    if st.button("👥 Send Tenant Report", use_container_width=True):
+        csv_buffer = generate_tenant_report()
+        if csv_buffer:
+            success, message = send_email_report(
+                EMAIL_RECIPIENT,
+                f"Tenant Report - {datetime.now().strftime('%Y-%m-%d')}",
+                "Please find attached the tenant report.",
+                csv_buffer
+            )
+            if success:
+                st.success("✅ Tenant report sent successfully!")
+            else:
+                st.error(f"❌ {message}")
+        else:
+            st.warning("No tenant data available")
+    
+    # Send payment report
+    if st.button("💰 Send Payment Report", use_container_width=True):
+        csv_buffer = generate_payment_report()
+        if csv_buffer:
+            success, message = send_email_report(
+                EMAIL_RECIPIENT,
+                f"Payment Report - {datetime.now().strftime('%Y-%m-%d')}",
+                "Please find attached the payment report.",
+                csv_buffer
+            )
+            if success:
+                st.success("✅ Payment report sent successfully!")
+            else:
+                st.error(f"❌ {message}")
+        else:
+            st.warning("No payment data available")
+    
+    # Individual tenant email
+    if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
+        st.markdown("### 📤 Send Tenant Info")
+        tenant_names = st.session_state.tenants['Name'].tolist()
+        selected_tenant = st.selectbox("Select Tenant", tenant_names, key="email_tenant_select")
+        
+        if st.button("📧 Send Tenant Information", use_container_width=True):
+            success, message = send_tenant_info_email(selected_tenant, EMAIL_RECIPIENT)
+            if success:
+                st.success(f"✅ Tenant information sent successfully!")
+            else:
+                st.error(f"❌ {message}")
+
 # ==================== MAIN APP ====================
 def show_header():
     st.markdown(f"""
@@ -631,7 +870,7 @@ def show_header():
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <div>
                 <h1>🏠 TenantHub</h1>
-                <p>Property Management Dashboard</p>
+                <p>Property Management System - Rwanda</p>
             </div>
             <div style="text-align: right;">
                 <div style="font-size: 0.9rem; opacity: 0.9;">👤 {st.session_state.get('username', 'Admin')}</div>
@@ -654,7 +893,6 @@ def show_metrics():
     total_revenue = tenants_df['Rent'].sum() if isinstance(tenants_df, pd.DataFrame) and not tenants_df.empty else 0
     active_maintenance = len(maintenance_df[maintenance_df['Status'] != 'Completed']) if isinstance(maintenance_df, pd.DataFrame) and not maintenance_df.empty else 0
     
-    # Calculate overdue payments
     overdue = 0
     if isinstance(payments_df, pd.DataFrame) and not payments_df.empty:
         today = datetime.now().date()
@@ -686,7 +924,7 @@ def show_metrics():
         st.markdown(f"""
         <div class="dashboard-card purple">
             <div class="metric-label">💰 Monthly Revenue</div>
-            <div class="metric-value">${total_revenue:,}</div>
+            <div class="metric-value">{format_currency(total_revenue)}</div>
             <div style="font-size: 0.85rem; color: #555;">From {total_tenants} tenants</div>
         </div>
         """, unsafe_allow_html=True)
@@ -712,7 +950,7 @@ def show_reminders():
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <div>
                             <strong>⚠️ OVERDUE</strong> - {reminder['tenant']} (Unit {reminder['unit']})
-                            <br>Amount: ${reminder['amount']} - Due: {reminder['due_date']}
+                            <br>Amount: {format_currency(reminder['amount'])} - Due: {reminder['due_date']}
                             <br><span style="color: #E74C3C;">Payment is {abs(reminder['days'])} days overdue!</span>
                         </div>
                     </div>
@@ -725,7 +963,7 @@ def show_reminders():
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <div>
                             <strong>⏰ Payment Due Soon</strong> - {reminder['tenant']} (Unit {reminder['unit']})
-                            <br>Amount: ${reminder['amount']} - Due: {reminder['due_date']}
+                            <br>Amount: {format_currency(reminder['amount'])} - Due: {reminder['due_date']}
                             <br>⏳ {reminder['days']} days remaining
                         </div>
                     </div>
@@ -750,7 +988,7 @@ def show_tenants():
             
             with col_b:
                 unit = st.text_input("Unit Number", placeholder="3B", key="tenant_unit")
-                rent = st.number_input("Monthly Rent ($)", min_value=0, step=50, key="tenant_rent")
+                rent = st.number_input("Monthly Rent (RWF)", min_value=0, step=5000, key="tenant_rent")
                 status = st.selectbox("Status", ["Active", "Pending", "In Progress", "New"], key="tenant_status")
             
             move_in_date = st.date_input("Move-in Date", datetime.now(), key="tenant_move_in")
@@ -771,7 +1009,6 @@ def show_tenants():
                     })
                     st.session_state.tenants = pd.concat([st.session_state.tenants, new_tenant], ignore_index=True)
                     
-                    # Generate payment schedule
                     due_dates = generate_payment_dates(move_in_date.strftime('%Y-%m-%d'))
                     for due_date in due_dates:
                         new_payment = pd.DataFrame({
@@ -784,7 +1021,7 @@ def show_tenants():
                         })
                         st.session_state.payments = pd.concat([st.session_state.payments, new_payment], ignore_index=True)
                     
-                    st.success("✅ Tenant added with payment schedule!")
+                    st.success(f"✅ Tenant added with payment schedule! ({format_currency(rent)})")
                     st.rerun()
             
             with col_d:
@@ -807,6 +1044,8 @@ def show_tenants():
         with st.expander("📊 Data Management", expanded=False):
             download_csv(st.session_state.tenants, 'tenants.csv')
             upload_csv('Tenants')
+        with st.expander("📧 Email Reports", expanded=False):
+            show_email_report_section()
     
     if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
         search = st.text_input("🔍 Search tenants", placeholder="Search by name or unit...", key="tenant_search")
@@ -827,7 +1066,7 @@ def show_tenants():
             
             with col2:
                 st.write(f"Unit: {row['Unit']}")
-                st.write(f"Rent: ${row['Rent']}")
+                st.write(f"Rent: {format_currency(row['Rent'])}")
                 st.caption(f"Move-in: {row['Move_In_Date']}")
             
             with col3:
@@ -864,7 +1103,7 @@ def show_tenants():
                         
                         with col_b:
                             new_unit = st.text_input("Unit", value=row['Unit'], key=f"edit_unit_{row['ID']}")
-                            new_rent = st.number_input("Rent", value=float(row['Rent']), step=50.0, key=f"edit_rent_{row['ID']}")
+                            new_rent = st.number_input("Rent (RWF)", value=float(row['Rent']), step=5000.0, key=f"edit_rent_{row['ID']}")
                             new_status = st.selectbox("Status", ["Active", "Pending", "In Progress", "New"], 
                                                      index=["Active", "Pending", "In Progress", "New"].index(row['Status']),
                                                      key=f"edit_status_{row['ID']}")
@@ -1117,7 +1356,6 @@ def show_payments():
     st.markdown('<div class="main-content">', unsafe_allow_html=True)
     st.markdown('<h2 class="section-header">💰 Payment Management</h2>', unsafe_allow_html=True)
     
-    # Show reminders
     show_reminders()
     
     col1, col2 = st.columns([3, 1])
@@ -1129,7 +1367,7 @@ def show_payments():
             with col_a:
                 tenant = st.text_input("Tenant Name", placeholder="John Smith", key="payment_tenant")
                 unit = st.text_input("Unit Number", placeholder="3B", key="payment_unit")
-                amount = st.number_input("Amount ($)", min_value=0, step=10, key="payment_amount")
+                amount = st.number_input("Amount (RWF)", min_value=0, step=5000, key="payment_amount")
             
             with col_b:
                 payment_date = st.date_input("Payment Date", datetime.now(), key="payment_date")
@@ -1146,13 +1384,15 @@ def show_payments():
                     'Status': [status]
                 })
                 st.session_state.payments = pd.concat([st.session_state.payments, new_payment], ignore_index=True)
-                st.success("✅ Payment recorded!")
+                st.success(f"✅ Payment recorded! ({format_currency(amount)})")
                 st.rerun()
     
     with col2:
         with st.expander("📊 Data Management", expanded=False):
             download_csv(st.session_state.payments, 'payments.csv')
             upload_csv('Payments')
+        with st.expander("📧 Email Reports", expanded=False):
+            show_email_report_section()
     
     if isinstance(st.session_state.payments, pd.DataFrame) and not st.session_state.payments.empty:
         total_collected = st.session_state.payments[st.session_state.payments['Status'] == 'Paid']['Amount'].sum()
@@ -1160,13 +1400,12 @@ def show_payments():
         
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("💰 Total Collected", f"${total_collected:,}")
+            st.metric("💰 Total Collected", format_currency(total_collected))
         with col2:
-            st.metric("⏳ Pending", f"${total_pending:,}")
+            st.metric("⏳ Pending", format_currency(total_pending))
         with col3:
             st.metric("📊 Total Records", len(st.session_state.payments))
         
-        # Filter options
         filter_status = st.selectbox("Filter by status", ["All", "Paid", "Pending", "Overdue"], key="payment_filter")
         
         filtered_df = st.session_state.payments.copy()
@@ -1181,7 +1420,7 @@ def show_payments():
                 st.caption(f"Unit {row['Unit']}")
             
             with col2:
-                st.write(f"${row['Amount']}")
+                st.write(format_currency(row['Amount']))
             
             with col3:
                 st.caption(f"Due: {row['Due_Date']}")
@@ -1204,7 +1443,7 @@ def show_payments():
                             new_unit = st.text_input("Unit", value=row['Unit'], key=f"edit_pay_unit_{row['ID']}")
                         
                         with col_b:
-                            new_amount = st.number_input("Amount", value=float(row['Amount']), step=10.0, key=f"edit_pay_amount_{row['ID']}")
+                            new_amount = st.number_input("Amount (RWF)", value=float(row['Amount']), step=5000.0, key=f"edit_pay_amount_{row['ID']}")
                             new_status = st.selectbox("Status", ["Paid", "Pending", "Overdue"],
                                                      index=["Paid", "Pending", "Overdue"].index(row['Status']),
                                                      key=f"edit_pay_status_{row['ID']}")
@@ -1242,7 +1481,7 @@ def show_sidebar():
         <div style="text-align: center; padding: 1rem 0;">
             <h1 style="color: #1B3A7A; margin: 0;">🏠</h1>
             <h3 style="color: #1B3A7A; margin: 0;">TenantHub</h3>
-            <p style="color: #888; font-size: 0.8rem;">v2.0</p>
+            <p style="color: #888; font-size: 0.8rem;">Rwanda 🇷🇼</p>
         </div>
         """, unsafe_allow_html=True)
         
@@ -1265,6 +1504,22 @@ def show_sidebar():
             st.metric("Properties", len(st.session_state.properties) if isinstance(st.session_state.properties, pd.DataFrame) else 0)
         
         st.markdown("---")
+        
+        # Email Reports section in sidebar
+        st.markdown("### 📧 Email Reports")
+        if st.button("📊 Full Report", use_container_width=True, key="sidebar_full_report"):
+            report_text = generate_full_report()
+            success, message = send_email_report(
+                EMAIL_RECIPIENT,
+                f"TenantHub Full Report - {datetime.now().strftime('%Y-%m-%d')}",
+                report_text
+            )
+            if success:
+                st.success("✅ Report sent!")
+            else:
+                st.error(f"❌ {message}")
+        
+        st.markdown("---")
         logout()
         
         return page
@@ -1281,7 +1536,6 @@ def main():
     
     if page == "📊 Dashboard":
         show_metrics()
-        # Show reminders on dashboard
         show_reminders()
     
     elif page == "👥 Tenants":
