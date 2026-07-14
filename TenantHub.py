@@ -48,11 +48,21 @@ st.markdown("""
         font-size: 2.8rem;
         font-weight: 700;
         text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        color: #FFFFFF !important;
     }
     .main-header p {
         margin: 0.5rem 0 0 0;
         opacity: 0.95;
         font-size: 1.2rem;
+        color: #E8F4FD !important;
+    }
+    
+    /* Dashboard title */
+    .dashboard-title {
+        color: #1B3A7A !important;
+        font-weight: 700 !important;
+        font-size: 1.8rem !important;
+        margin-bottom: 1rem !important;
     }
     
     /* Cards */
@@ -121,16 +131,13 @@ st.markdown("""
         transform: scale(1.02);
         box-shadow: 0 4px 15px rgba(26, 67, 113, 0.4);
     }
-    .stButton > button:active {
-        transform: scale(0.98);
-    }
     
     /* Danger button */
-    .stButton > button[kind="secondary"] {
-        background: linear-gradient(135deg, #C0392B, #E74C3C);
+    div[data-testid="column"]:has(button[kind="secondary"]) button {
+        background: linear-gradient(135deg, #C0392B, #E74C3C) !important;
     }
-    .stButton > button[kind="secondary"]:hover {
-        box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4);
+    div[data-testid="column"]:has(button[kind="secondary"]) button:hover {
+        box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4) !important;
     }
     
     /* Login box */
@@ -154,7 +161,7 @@ st.markdown("""
         background: linear-gradient(135deg, #E8F4FD, #D6EAF8);
         border-radius: 10px;
         font-weight: 600;
-        color: #1B3A7A;
+        color: #1B3A7A !important;
     }
     
     /* Sidebar */
@@ -162,6 +169,16 @@ st.markdown("""
         background: rgba(255, 255, 255, 0.95);
         border-right: 2px solid rgba(26, 67, 113, 0.2);
         backdrop-filter: blur(10px);
+    }
+    
+    /* Sidebar text */
+    .css-1d391kg .css-1rs6os {
+        color: #1B3A7A !important;
+    }
+    
+    /* Headers in main content */
+    .main-content h1, .main-content h2, .main-content h3, .main-content h4 {
+        color: #1B3A7A !important;
     }
     
     /* Dataframe */
@@ -175,39 +192,14 @@ st.markdown("""
         color: white;
     }
     
-    /* Edit/Delete buttons in table */
-    .action-buttons {
-        display: flex;
-        gap: 0.5rem;
-    }
-    .action-buttons .stButton {
-        flex: 1;
-    }
-    .action-buttons .stButton > button {
-        padding: 0.3rem 0.8rem;
-        font-size: 0.8rem;
-    }
-    
-    /* Modal overlay */
-    .modal {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0,0,0,0.5);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        z-index: 999;
-    }
-    .modal-content {
-        background: white;
-        padding: 2rem;
-        border-radius: 20px;
-        max-width: 500px;
-        width: 90%;
-        box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+    /* Section headers */
+    .section-header {
+        color: #1B3A7A !important;
+        font-weight: 700 !important;
+        font-size: 1.5rem !important;
+        margin: 1rem 0 !important;
+        padding-bottom: 0.5rem !important;
+        border-bottom: 3px solid #4A90D9 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -234,10 +226,10 @@ def show_login():
         st.markdown('<div class="login-box">', unsafe_allow_html=True)
         st.markdown("<h2>🔐 Admin Login</h2>", unsafe_allow_html=True)
         
-        username = st.text_input("Username", placeholder="Enter username")
-        password = st.text_input("Password", type="password", placeholder="Enter password")
+        username = st.text_input("Username", placeholder="Enter username", key="login_username")
+        password = st.text_input("Password", type="password", placeholder="Enter password", key="login_password")
         
-        if st.button("Login"):
+        if st.button("Login", key="login_button"):
             if username == "admin" and password == "admin123":
                 st.session_state.logged_in = True
                 st.session_state.username = username
@@ -254,7 +246,7 @@ def show_login():
         st.stop()
 
 def logout():
-    if st.sidebar.button("🚪 Logout", use_container_width=True):
+    if st.sidebar.button("🚪 Logout", use_container_width=True, key="logout_button"):
         st.session_state.logged_in = False
         st.rerun()
 
@@ -321,21 +313,22 @@ def download_csv(df, filename):
             data=csv,
             file_name=filename,
             mime="text/csv",
-            use_container_width=True
+            use_container_width=True,
+            key=f"download_{filename}"
         )
 
 def upload_csv(df_type):
     uploaded_file = st.file_uploader(
         f"📤 Upload {df_type} CSV",
         type=['csv'],
-        key=f"upload_{df_type}"
+        key=f"upload_{df_type}_{datetime.now().timestamp()}"
     )
     
     if uploaded_file is not None:
         try:
             df = pd.read_csv(uploaded_file)
             st.success(f"✅ Loaded {len(df)} records!")
-            if st.button(f"Apply {df_type} Data", key=f"apply_{df_type}"):
+            if st.button(f"Apply {df_type} Data", key=f"apply_{df_type}_{datetime.now().timestamp()}"):
                 if df_type == 'Tenants':
                     st.session_state.tenants = df
                 elif df_type == 'Properties':
@@ -349,203 +342,33 @@ def upload_csv(df_type):
             st.error(f"Error: {str(e)}")
 
 # ==================== EDIT/DELETE FUNCTIONS ====================
-def edit_tenant(tenant_id):
-    st.session_state.editing_tenant = tenant_id
-    st.rerun()
-
 def delete_tenant(tenant_id):
-    if st.button(f"🗑️ Delete", key=f"del_tenant_{tenant_id}"):
-        df = st.session_state.tenants
-        df = df[df['ID'] != tenant_id]
-        st.session_state.tenants = df.reset_index(drop=True)
-        st.success("✅ Tenant deleted successfully!")
-        st.rerun()
-
-def edit_property(prop_id):
-    st.session_state.editing_property = prop_id
+    df = st.session_state.tenants
+    df = df[df['ID'] != tenant_id]
+    st.session_state.tenants = df.reset_index(drop=True)
+    st.success("✅ Tenant deleted successfully!")
     st.rerun()
 
 def delete_property(prop_id):
-    if st.button(f"🗑️ Delete", key=f"del_prop_{prop_id}"):
-        df = st.session_state.properties
-        df = df[df['ID'] != prop_id]
-        st.session_state.properties = df.reset_index(drop=True)
-        st.success("✅ Property deleted successfully!")
-        st.rerun()
-
-def edit_maintenance(maint_id):
-    st.session_state.editing_maintenance = maint_id
+    df = st.session_state.properties
+    df = df[df['ID'] != prop_id]
+    st.session_state.properties = df.reset_index(drop=True)
+    st.success("✅ Property deleted successfully!")
     st.rerun()
 
 def delete_maintenance(maint_id):
-    if st.button(f"🗑️ Delete", key=f"del_maint_{maint_id}"):
-        df = st.session_state.maintenance
-        df = df[df['ID'] != maint_id]
-        st.session_state.maintenance = df.reset_index(drop=True)
-        st.success("✅ Maintenance request deleted!")
-        st.rerun()
-
-def edit_payment(payment_id):
-    st.session_state.editing_payment = payment_id
+    df = st.session_state.maintenance
+    df = df[df['ID'] != maint_id]
+    st.session_state.maintenance = df.reset_index(drop=True)
+    st.success("✅ Maintenance request deleted!")
     st.rerun()
 
 def delete_payment(payment_id):
-    if st.button(f"🗑️ Delete", key=f"del_payment_{payment_id}"):
-        df = st.session_state.payments
-        df = df[df['ID'] != payment_id]
-        st.session_state.payments = df.reset_index(drop=True)
-        st.success("✅ Payment deleted successfully!")
-        st.rerun()
-
-# ==================== EDIT MODAL COMPONENTS ====================
-def show_edit_tenant_modal():
-    if 'editing_tenant' in st.session_state:
-        tenant_id = st.session_state.editing_tenant
-        df = st.session_state.tenants
-        tenant = df[df['ID'] == tenant_id].iloc[0]
-        
-        with st.expander(f"✏️ Editing Tenant: {tenant['Name']}", expanded=True):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                name = st.text_input("Name", value=tenant['Name'])
-                email = st.text_input("Email", value=tenant['Email'])
-                phone = st.text_input("Phone", value=tenant['Phone'])
-            
-            with col2:
-                unit = st.text_input("Unit", value=tenant['Unit'])
-                rent = st.number_input("Rent", value=float(tenant['Rent']), step=50.0)
-                status = st.selectbox("Status", ["Active", "Pending", "In Progress", "New"], 
-                                     index=["Active", "Pending", "In Progress", "New"].index(tenant['Status']))
-            
-            col3, col4 = st.columns(2)
-            with col3:
-                if st.button("💾 Save Changes", use_container_width=True):
-                    df.loc[df['ID'] == tenant_id, 'Name'] = name
-                    df.loc[df['ID'] == tenant_id, 'Email'] = email
-                    df.loc[df['ID'] == tenant_id, 'Phone'] = phone
-                    df.loc[df['ID'] == tenant_id, 'Unit'] = unit
-                    df.loc[df['ID'] == tenant_id, 'Rent'] = rent
-                    df.loc[df['ID'] == tenant_id, 'Status'] = status
-                    st.session_state.tenants = df
-                    del st.session_state.editing_tenant
-                    st.success("✅ Tenant updated!")
-                    st.rerun()
-            
-            with col4:
-                if st.button("❌ Cancel", use_container_width=True):
-                    del st.session_state.editing_tenant
-                    st.rerun()
-
-def show_edit_property_modal():
-    if 'editing_property' in st.session_state:
-        prop_id = st.session_state.editing_property
-        df = st.session_state.properties
-        prop = df[df['ID'] == prop_id].iloc[0]
-        
-        with st.expander(f"✏️ Editing Property: {prop['Address']}", expanded=True):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                address = st.text_input("Address", value=prop['Address'])
-                city = st.text_input("City", value=prop['City'])
-            
-            with col2:
-                prop_type = st.selectbox("Type", ["Apartment", "Townhouse", "Duplex", "Single Family", "Commercial"],
-                                        index=["Apartment", "Townhouse", "Duplex", "Single Family", "Commercial"].index(prop['Type']))
-                units = st.number_input("Units", value=int(prop['Units']), step=1)
-                occupancy = st.number_input("Occupancy", value=int(prop['Occupancy']), step=1, max_value=int(units))
-            
-            col3, col4 = st.columns(2)
-            with col3:
-                if st.button("💾 Save Changes", use_container_width=True):
-                    df.loc[df['ID'] == prop_id, 'Address'] = address
-                    df.loc[df['ID'] == prop_id, 'City'] = city
-                    df.loc[df['ID'] == prop_id, 'Type'] = prop_type
-                    df.loc[df['ID'] == prop_id, 'Units'] = units
-                    df.loc[df['ID'] == prop_id, 'Occupancy'] = occupancy
-                    st.session_state.properties = df
-                    del st.session_state.editing_property
-                    st.success("✅ Property updated!")
-                    st.rerun()
-            
-            with col4:
-                if st.button("❌ Cancel", use_container_width=True):
-                    del st.session_state.editing_property
-                    st.rerun()
-
-def show_edit_maintenance_modal():
-    if 'editing_maintenance' in st.session_state:
-        maint_id = st.session_state.editing_maintenance
-        df = st.session_state.maintenance
-        maint = df[df['ID'] == maint_id].iloc[0]
-        
-        with st.expander(f"✏️ Editing Maintenance: {maint['Issue'][:30]}...", expanded=True):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                unit = st.text_input("Unit", value=maint['Unit'])
-                tenant = st.text_input("Tenant", value=maint['Tenant'])
-                issue = st.text_area("Issue", value=maint['Issue'])
-            
-            with col2:
-                status = st.selectbox("Status", ["New", "Active", "In Progress", "Completed"],
-                                     index=["New", "Active", "In Progress", "Completed"].index(maint['Status']))
-                priority = st.selectbox("Priority", ["High", "Medium", "Low"],
-                                       index=["High", "Medium", "Low"].index(maint['Priority']))
-            
-            col3, col4 = st.columns(2)
-            with col3:
-                if st.button("💾 Save Changes", use_container_width=True):
-                    df.loc[df['ID'] == maint_id, 'Unit'] = unit
-                    df.loc[df['ID'] == maint_id, 'Tenant'] = tenant
-                    df.loc[df['ID'] == maint_id, 'Issue'] = issue
-                    df.loc[df['ID'] == maint_id, 'Status'] = status
-                    df.loc[df['ID'] == maint_id, 'Priority'] = priority
-                    st.session_state.maintenance = df
-                    del st.session_state.editing_maintenance
-                    st.success("✅ Maintenance updated!")
-                    st.rerun()
-            
-            with col4:
-                if st.button("❌ Cancel", use_container_width=True):
-                    del st.session_state.editing_maintenance
-                    st.rerun()
-
-def show_edit_payment_modal():
-    if 'editing_payment' in st.session_state:
-        payment_id = st.session_state.editing_payment
-        df = st.session_state.payments
-        payment = df[df['ID'] == payment_id].iloc[0]
-        
-        with st.expander(f"✏️ Editing Payment: {payment['Tenant']}", expanded=True):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                tenant = st.text_input("Tenant", value=payment['Tenant'])
-                unit = st.text_input("Unit", value=payment['Unit'])
-            
-            with col2:
-                amount = st.number_input("Amount", value=float(payment['Amount']), step=10.0)
-                status = st.selectbox("Status", ["Paid", "Pending", "Overdue"],
-                                     index=["Paid", "Pending", "Overdue"].index(payment['Status']))
-            
-            col3, col4 = st.columns(2)
-            with col3:
-                if st.button("💾 Save Changes", use_container_width=True):
-                    df.loc[df['ID'] == payment_id, 'Tenant'] = tenant
-                    df.loc[df['ID'] == payment_id, 'Unit'] = unit
-                    df.loc[df['ID'] == payment_id, 'Amount'] = amount
-                    df.loc[df['ID'] == payment_id, 'Status'] = status
-                    st.session_state.payments = df
-                    del st.session_state.editing_payment
-                    st.success("✅ Payment updated!")
-                    st.rerun()
-            
-            with col4:
-                if st.button("❌ Cancel", use_container_width=True):
-                    del st.session_state.editing_payment
-                    st.rerun()
+    df = st.session_state.payments
+    df = df[df['ID'] != payment_id]
+    st.session_state.payments = df.reset_index(drop=True)
+    st.success("✅ Payment deleted successfully!")
+    st.rerun()
 
 # ==================== MAIN APP ====================
 def show_header():
@@ -614,7 +437,7 @@ def show_metrics():
 
 def show_tenants():
     st.markdown('<div class="main-content">', unsafe_allow_html=True)
-    st.markdown("### 👥 Tenant Management")
+    st.markdown('<h2 class="section-header">👥 Tenant Management</h2>', unsafe_allow_html=True)
     
     col1, col2 = st.columns([3, 1])
     
@@ -623,19 +446,19 @@ def show_tenants():
             col_a, col_b = st.columns(2)
             
             with col_a:
-                name = st.text_input("Full Name", placeholder="John Doe")
-                email = st.text_input("Email", placeholder="john@email.com")
-                phone = st.text_input("Phone", placeholder="(555) 123-4567")
+                name = st.text_input("Full Name", placeholder="John Doe", key="tenant_name")
+                email = st.text_input("Email", placeholder="john@email.com", key="tenant_email")
+                phone = st.text_input("Phone", placeholder="(555) 123-4567", key="tenant_phone")
             
             with col_b:
-                unit = st.text_input("Unit Number", placeholder="3B")
-                rent = st.number_input("Monthly Rent ($)", min_value=0, step=50)
-                status = st.selectbox("Status", ["Active", "Pending", "In Progress", "New"])
+                unit = st.text_input("Unit Number", placeholder="3B", key="tenant_unit")
+                rent = st.number_input("Monthly Rent ($)", min_value=0, step=50, key="tenant_rent")
+                status = st.selectbox("Status", ["Active", "Pending", "In Progress", "New"], key="tenant_status")
             
-            lease_start = st.date_input("Lease Start", datetime.now())
-            lease_end = st.date_input("Lease End", datetime.now().replace(year=datetime.now().year + 1))
+            lease_start = st.date_input("Lease Start", datetime.now(), key="tenant_lease_start")
+            lease_end = st.date_input("Lease End", datetime.now().replace(year=datetime.now().year + 1), key="tenant_lease_end")
             
-            if st.button("💾 Add Tenant"):
+            if st.button("💾 Add Tenant", key="add_tenant_btn"):
                 new_id = len(st.session_state.tenants) + 1
                 new_tenant = pd.DataFrame({
                     'ID': [new_id],
@@ -657,11 +480,8 @@ def show_tenants():
             download_csv(st.session_state.tenants, 'tenants.csv')
             upload_csv('Tenants')
     
-    # Show edit modal if editing
-    show_edit_tenant_modal()
-    
     if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
-        search = st.text_input("🔍 Search tenants", placeholder="Search by name or unit...")
+        search = st.text_input("🔍 Search tenants", placeholder="Search by name or unit...", key="tenant_search")
         
         filtered_df = st.session_state.tenants.copy()
         if search:
@@ -692,11 +512,44 @@ def show_tenants():
                 st.markdown(f'<span class="status-badge {status_class}">{row["Status"]}</span>', unsafe_allow_html=True)
             
             with col4:
-                if st.button(f"✏️ Edit", key=f"edit_tenant_{row['ID']}", use_container_width=True):
-                    edit_tenant(row['ID'])
+                # Edit button opens expander
+                if st.button(f"✏️ Edit", key=f"edit_tenant_{row['ID']}_{idx}", use_container_width=True):
+                    # Create edit form
+                    with st.expander(f"✏️ Editing: {row['Name']}", expanded=True):
+                        col_a, col_b = st.columns(2)
+                        
+                        with col_a:
+                            new_name = st.text_input("Name", value=row['Name'], key=f"edit_name_{row['ID']}")
+                            new_email = st.text_input("Email", value=row['Email'], key=f"edit_email_{row['ID']}")
+                            new_phone = st.text_input("Phone", value=row['Phone'], key=f"edit_phone_{row['ID']}")
+                        
+                        with col_b:
+                            new_unit = st.text_input("Unit", value=row['Unit'], key=f"edit_unit_{row['ID']}")
+                            new_rent = st.number_input("Rent", value=float(row['Rent']), step=50.0, key=f"edit_rent_{row['ID']}")
+                            new_status = st.selectbox("Status", ["Active", "Pending", "In Progress", "New"], 
+                                                     index=["Active", "Pending", "In Progress", "New"].index(row['Status']),
+                                                     key=f"edit_status_{row['ID']}")
+                        
+                        col_c, col_d = st.columns(2)
+                        with col_c:
+                            if st.button("💾 Save", key=f"save_tenant_{row['ID']}"):
+                                df = st.session_state.tenants
+                                df.loc[df['ID'] == row['ID'], 'Name'] = new_name
+                                df.loc[df['ID'] == row['ID'], 'Email'] = new_email
+                                df.loc[df['ID'] == row['ID'], 'Phone'] = new_phone
+                                df.loc[df['ID'] == row['ID'], 'Unit'] = new_unit
+                                df.loc[df['ID'] == row['ID'], 'Rent'] = new_rent
+                                df.loc[df['ID'] == row['ID'], 'Status'] = new_status
+                                st.session_state.tenants = df
+                                st.success("✅ Tenant updated!")
+                                st.rerun()
+                        
+                        with col_d:
+                            if st.button("❌ Cancel", key=f"cancel_tenant_{row['ID']}"):
+                                st.rerun()
             
             with col5:
-                if st.button(f"🗑️ Delete", key=f"del_tenant_{row['ID']}", use_container_width=True):
+                if st.button(f"🗑️ Delete", key=f"del_tenant_{row['ID']}_{idx}", use_container_width=True):
                     delete_tenant(row['ID'])
             
             st.markdown("---")
@@ -707,7 +560,7 @@ def show_tenants():
 
 def show_properties():
     st.markdown('<div class="main-content">', unsafe_allow_html=True)
-    st.markdown("### 🏠 Property Management")
+    st.markdown('<h2 class="section-header">🏠 Property Management</h2>', unsafe_allow_html=True)
     
     col1, col2 = st.columns([3, 1])
     
@@ -716,15 +569,15 @@ def show_properties():
             col_a, col_b = st.columns(2)
             
             with col_a:
-                address = st.text_input("Address", placeholder="123 Main St")
-                city = st.text_input("City", placeholder="Springfield")
+                address = st.text_input("Address", placeholder="123 Main St", key="prop_address")
+                city = st.text_input("City", placeholder="Springfield", key="prop_city")
             
             with col_b:
-                prop_type = st.selectbox("Property Type", ["Apartment", "Townhouse", "Duplex", "Single Family", "Commercial"])
-                units = st.number_input("Total Units", min_value=1, step=1)
-                occupancy = st.number_input("Occupied Units", min_value=0, max_value=units, step=1)
+                prop_type = st.selectbox("Property Type", ["Apartment", "Townhouse", "Duplex", "Single Family", "Commercial"], key="prop_type")
+                units = st.number_input("Total Units", min_value=1, step=1, key="prop_units")
+                occupancy = st.number_input("Occupied Units", min_value=0, max_value=units, step=1, key="prop_occupancy")
             
-            if st.button("💾 Add Property"):
+            if st.button("💾 Add Property", key="add_prop_btn"):
                 new_id = len(st.session_state.properties) + 1
                 new_property = pd.DataFrame({
                     'ID': [new_id],
@@ -742,8 +595,6 @@ def show_properties():
         with st.expander("📊 Data Management", expanded=False):
             download_csv(st.session_state.properties, 'properties.csv')
             upload_csv('Properties')
-    
-    show_edit_property_modal()
     
     if isinstance(st.session_state.properties, pd.DataFrame) and not st.session_state.properties.empty:
         for idx, row in st.session_state.properties.iterrows():
@@ -763,11 +614,41 @@ def show_properties():
                 st.caption(f"{occupancy_pct}% occupied")
             
             with col4:
-                if st.button(f"✏️ Edit", key=f"edit_prop_{row['ID']}", use_container_width=True):
-                    edit_property(row['ID'])
+                if st.button(f"✏️ Edit", key=f"edit_prop_{row['ID']}_{idx}", use_container_width=True):
+                    with st.expander(f"✏️ Editing: {row['Address']}", expanded=True):
+                        col_a, col_b = st.columns(2)
+                        
+                        with col_a:
+                            new_address = st.text_input("Address", value=row['Address'], key=f"edit_prop_addr_{row['ID']}")
+                            new_city = st.text_input("City", value=row['City'], key=f"edit_prop_city_{row['ID']}")
+                        
+                        with col_b:
+                            new_type = st.selectbox("Type", ["Apartment", "Townhouse", "Duplex", "Single Family", "Commercial"],
+                                                   index=["Apartment", "Townhouse", "Duplex", "Single Family", "Commercial"].index(row['Type']),
+                                                   key=f"edit_prop_type_{row['ID']}")
+                            new_units = st.number_input("Units", value=int(row['Units']), step=1, key=f"edit_prop_units_{row['ID']}")
+                            new_occupancy = st.number_input("Occupancy", value=int(row['Occupancy']), step=1, max_value=int(new_units),
+                                                           key=f"edit_prop_occ_{row['ID']}")
+                        
+                        col_c, col_d = st.columns(2)
+                        with col_c:
+                            if st.button("💾 Save", key=f"save_prop_{row['ID']}"):
+                                df = st.session_state.properties
+                                df.loc[df['ID'] == row['ID'], 'Address'] = new_address
+                                df.loc[df['ID'] == row['ID'], 'City'] = new_city
+                                df.loc[df['ID'] == row['ID'], 'Type'] = new_type
+                                df.loc[df['ID'] == row['ID'], 'Units'] = new_units
+                                df.loc[df['ID'] == row['ID'], 'Occupancy'] = new_occupancy
+                                st.session_state.properties = df
+                                st.success("✅ Property updated!")
+                                st.rerun()
+                        
+                        with col_d:
+                            if st.button("❌ Cancel", key=f"cancel_prop_{row['ID']}"):
+                                st.rerun()
             
             with col5:
-                if st.button(f"🗑️ Delete", key=f"del_prop_{row['ID']}", use_container_width=True):
+                if st.button(f"🗑️ Delete", key=f"del_prop_{row['ID']}_{idx}", use_container_width=True):
                     delete_property(row['ID'])
             
             st.markdown("---")
@@ -778,7 +659,7 @@ def show_properties():
 
 def show_maintenance():
     st.markdown('<div class="main-content">', unsafe_allow_html=True)
-    st.markdown("### 🔧 Maintenance Management")
+    st.markdown('<h2 class="section-header">🔧 Maintenance Management</h2>', unsafe_allow_html=True)
     
     col1, col2 = st.columns([3, 1])
     
@@ -787,15 +668,15 @@ def show_maintenance():
             col_a, col_b = st.columns(2)
             
             with col_a:
-                unit = st.text_input("Unit Number", placeholder="3B")
-                tenant = st.text_input("Tenant Name", placeholder="John Smith")
-                issue = st.text_area("Issue Description", placeholder="Describe the issue...")
+                unit = st.text_input("Unit Number", placeholder="3B", key="maint_unit")
+                tenant = st.text_input("Tenant Name", placeholder="John Smith", key="maint_tenant")
+                issue = st.text_area("Issue Description", placeholder="Describe the issue...", key="maint_issue")
             
             with col_b:
-                priority = st.selectbox("Priority", ["High", "Medium", "Low"])
-                status = st.selectbox("Status", ["New", "Active", "In Progress", "Completed"])
+                priority = st.selectbox("Priority", ["High", "Medium", "Low"], key="maint_priority")
+                status = st.selectbox("Status", ["New", "Active", "In Progress", "Completed"], key="maint_status")
             
-            if st.button("💾 Report Issue"):
+            if st.button("💾 Report Issue", key="add_maint_btn"):
                 new_id = f"M-{len(st.session_state.maintenance) + 1:03d}"
                 new_issue = pd.DataFrame({
                     'ID': [new_id],
@@ -815,10 +696,8 @@ def show_maintenance():
             download_csv(st.session_state.maintenance, 'maintenance.csv')
             upload_csv('Maintenance')
     
-    show_edit_maintenance_modal()
-    
     if isinstance(st.session_state.maintenance, pd.DataFrame) and not st.session_state.maintenance.empty:
-        priority_filter = st.selectbox("Filter by priority", ["All", "High", "Medium", "Low"])
+        priority_filter = st.selectbox("Filter by priority", ["All", "High", "Medium", "Low"], key="maint_filter")
         
         filtered_df = st.session_state.maintenance.copy()
         if priority_filter != "All":
@@ -851,11 +730,42 @@ def show_maintenance():
                 st.markdown(f'<span class="status-badge {status_class}">{row["Status"]}</span>', unsafe_allow_html=True)
             
             with col4:
-                if st.button(f"✏️ Edit", key=f"edit_maint_{row['ID']}", use_container_width=True):
-                    edit_maintenance(row['ID'])
+                if st.button(f"✏️ Edit", key=f"edit_maint_{row['ID']}_{idx}", use_container_width=True):
+                    with st.expander(f"✏️ Editing: {row['Issue'][:30]}...", expanded=True):
+                        col_a, col_b = st.columns(2)
+                        
+                        with col_a:
+                            new_unit = st.text_input("Unit", value=row['Unit'], key=f"edit_maint_unit_{row['ID']}")
+                            new_tenant = st.text_input("Tenant", value=row['Tenant'], key=f"edit_maint_tenant_{row['ID']}")
+                            new_issue = st.text_area("Issue", value=row['Issue'], key=f"edit_maint_issue_{row['ID']}")
+                        
+                        with col_b:
+                            new_status = st.selectbox("Status", ["New", "Active", "In Progress", "Completed"],
+                                                     index=["New", "Active", "In Progress", "Completed"].index(row['Status']),
+                                                     key=f"edit_maint_status_{row['ID']}")
+                            new_priority = st.selectbox("Priority", ["High", "Medium", "Low"],
+                                                       index=["High", "Medium", "Low"].index(row['Priority']),
+                                                       key=f"edit_maint_priority_{row['ID']}")
+                        
+                        col_c, col_d = st.columns(2)
+                        with col_c:
+                            if st.button("💾 Save", key=f"save_maint_{row['ID']}"):
+                                df = st.session_state.maintenance
+                                df.loc[df['ID'] == row['ID'], 'Unit'] = new_unit
+                                df.loc[df['ID'] == row['ID'], 'Tenant'] = new_tenant
+                                df.loc[df['ID'] == row['ID'], 'Issue'] = new_issue
+                                df.loc[df['ID'] == row['ID'], 'Status'] = new_status
+                                df.loc[df['ID'] == row['ID'], 'Priority'] = new_priority
+                                st.session_state.maintenance = df
+                                st.success("✅ Maintenance updated!")
+                                st.rerun()
+                        
+                        with col_d:
+                            if st.button("❌ Cancel", key=f"cancel_maint_{row['ID']}"):
+                                st.rerun()
             
             with col5:
-                if st.button(f"🗑️ Delete", key=f"del_maint_{row['ID']}", use_container_width=True):
+                if st.button(f"🗑️ Delete", key=f"del_maint_{row['ID']}_{idx}", use_container_width=True):
                     delete_maintenance(row['ID'])
             
             st.markdown("---")
@@ -866,7 +776,7 @@ def show_maintenance():
 
 def show_payments():
     st.markdown('<div class="main-content">', unsafe_allow_html=True)
-    st.markdown("### 💰 Payment Management")
+    st.markdown('<h2 class="section-header">💰 Payment Management</h2>', unsafe_allow_html=True)
     
     col1, col2 = st.columns([3, 1])
     
@@ -875,15 +785,15 @@ def show_payments():
             col_a, col_b = st.columns(2)
             
             with col_a:
-                tenant = st.text_input("Tenant Name", placeholder="John Smith")
-                unit = st.text_input("Unit Number", placeholder="3B")
-                amount = st.number_input("Amount ($)", min_value=0, step=10)
+                tenant = st.text_input("Tenant Name", placeholder="John Smith", key="payment_tenant")
+                unit = st.text_input("Unit Number", placeholder="3B", key="payment_unit")
+                amount = st.number_input("Amount ($)", min_value=0, step=10, key="payment_amount")
             
             with col_b:
-                payment_date = st.date_input("Payment Date", datetime.now())
-                status = st.selectbox("Status", ["Paid", "Pending", "Overdue"])
+                payment_date = st.date_input("Payment Date", datetime.now(), key="payment_date")
+                status = st.selectbox("Status", ["Paid", "Pending", "Overdue"], key="payment_status")
             
-            if st.button("💾 Record Payment"):
+            if st.button("💾 Record Payment", key="add_payment_btn"):
                 new_id = len(st.session_state.payments) + 1
                 new_payment = pd.DataFrame({
                     'ID': [new_id],
@@ -901,8 +811,6 @@ def show_payments():
         with st.expander("📊 Data Management", expanded=False):
             download_csv(st.session_state.payments, 'payments.csv')
             upload_csv('Payments')
-    
-    show_edit_payment_modal()
     
     if isinstance(st.session_state.payments, pd.DataFrame) and not st.session_state.payments.empty:
         total_collected = st.session_state.payments[st.session_state.payments['Status'] == 'Paid']['Amount'].sum()
@@ -936,11 +844,38 @@ def show_payments():
                 st.markdown(f'<span class="status-badge {status_class}">{row["Status"]}</span>', unsafe_allow_html=True)
             
             with col4:
-                if st.button(f"✏️ Edit", key=f"edit_payment_{row['ID']}", use_container_width=True):
-                    edit_payment(row['ID'])
+                if st.button(f"✏️ Edit", key=f"edit_payment_{row['ID']}_{idx}", use_container_width=True):
+                    with st.expander(f"✏️ Editing: {row['Tenant']}", expanded=True):
+                        col_a, col_b = st.columns(2)
+                        
+                        with col_a:
+                            new_tenant = st.text_input("Tenant", value=row['Tenant'], key=f"edit_pay_tenant_{row['ID']}")
+                            new_unit = st.text_input("Unit", value=row['Unit'], key=f"edit_pay_unit_{row['ID']}")
+                        
+                        with col_b:
+                            new_amount = st.number_input("Amount", value=float(row['Amount']), step=10.0, key=f"edit_pay_amount_{row['ID']}")
+                            new_status = st.selectbox("Status", ["Paid", "Pending", "Overdue"],
+                                                     index=["Paid", "Pending", "Overdue"].index(row['Status']),
+                                                     key=f"edit_pay_status_{row['ID']}")
+                        
+                        col_c, col_d = st.columns(2)
+                        with col_c:
+                            if st.button("💾 Save", key=f"save_payment_{row['ID']}"):
+                                df = st.session_state.payments
+                                df.loc[df['ID'] == row['ID'], 'Tenant'] = new_tenant
+                                df.loc[df['ID'] == row['ID'], 'Unit'] = new_unit
+                                df.loc[df['ID'] == row['ID'], 'Amount'] = new_amount
+                                df.loc[df['ID'] == row['ID'], 'Status'] = new_status
+                                st.session_state.payments = df
+                                st.success("✅ Payment updated!")
+                                st.rerun()
+                        
+                        with col_d:
+                            if st.button("❌ Cancel", key=f"cancel_payment_{row['ID']}"):
+                                st.rerun()
             
             with col5:
-                if st.button(f"🗑️ Delete", key=f"del_payment_{row['ID']}", use_container_width=True):
+                if st.button(f"🗑️ Delete", key=f"del_payment_{row['ID']}_{idx}", use_container_width=True):
                     delete_payment(row['ID'])
             
             st.markdown("---")
@@ -965,7 +900,8 @@ def show_sidebar():
         page = st.radio(
             "📋 Navigation",
             ["📊 Dashboard", "👥 Tenants", "🏠 Properties", "🔧 Maintenance", "💰 Payments"],
-            index=0
+            index=0,
+            key="navigation"
         )
         
         st.markdown("---")
@@ -999,7 +935,7 @@ def main():
         with col1:
             st.markdown("""
             <div style="background: rgba(255,255,255,0.95); padding: 1.5rem; border-radius: 15px; backdrop-filter: blur(10px);">
-                <h3>📋 Recent Activity</h3>
+                <h3 style="color: #1B3A7A;">📋 Recent Activity</h3>
             """, unsafe_allow_html=True)
             
             activities = [
@@ -1021,7 +957,7 @@ def main():
         with col2:
             st.markdown("""
             <div style="background: rgba(255,255,255,0.95); padding: 1.5rem; border-radius: 15px; backdrop-filter: blur(10px);">
-                <h3>📈 Revenue Overview</h3>
+                <h3 style="color: #1B3A7A;">📈 Revenue Overview</h3>
             """, unsafe_allow_html=True)
             
             chart_data = {
