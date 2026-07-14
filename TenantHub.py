@@ -3,8 +3,15 @@ import pandas as pd
 import io
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import hashlib
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+import base64
 
 # ==================== PAGE CONFIGURATION ====================
 st.set_page_config(
@@ -57,12 +64,24 @@ st.markdown("""
         color: #E8F4FD !important;
     }
     
-    /* Dashboard title */
-    .dashboard-title {
-        color: #1B3A7A !important;
-        font-weight: 700 !important;
-        font-size: 1.8rem !important;
-        margin-bottom: 1rem !important;
+    /* Reminder card */
+    .reminder-card {
+        background: linear-gradient(135deg, #FFF3CD, #FFEAA7);
+        border-left: 5px solid #F39C12;
+        padding: 1rem;
+        border-radius: 10px;
+        margin-bottom: 1rem;
+        animation: pulse 2s infinite;
+    }
+    .reminder-card.urgent {
+        background: linear-gradient(135deg, #FADBD8, #F5B7B1);
+        border-left-color: #E74C3C;
+    }
+    
+    @keyframes pulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.01); }
+        100% { transform: scale(1); }
     }
     
     /* Cards */
@@ -132,14 +151,6 @@ st.markdown("""
         box-shadow: 0 4px 15px rgba(26, 67, 113, 0.4);
     }
     
-    /* Danger button */
-    div[data-testid="column"]:has(button[kind="secondary"]) button {
-        background: linear-gradient(135deg, #C0392B, #E74C3C) !important;
-    }
-    div[data-testid="column"]:has(button[kind="secondary"]) button:hover {
-        box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4) !important;
-    }
-    
     /* Login box - Compact */
     .login-box {
         background: rgba(255, 255, 255, 0.95);
@@ -156,48 +167,6 @@ st.markdown("""
         margin-bottom: 1.5rem;
         font-size: 1.5rem;
     }
-    .login-box .stTextInput > div {
-        margin-bottom: 0.5rem;
-    }
-    .login-box .stButton > button {
-        margin-top: 0.5rem;
-    }
-    
-    /* Expander */
-    .streamlit-expanderHeader {
-        background: linear-gradient(135deg, #E8F4FD, #D6EAF8);
-        border-radius: 10px;
-        font-weight: 600;
-        color: #1B3A7A !important;
-    }
-    
-    /* Sidebar */
-    .css-1d391kg {
-        background: rgba(255, 255, 255, 0.95);
-        border-right: 2px solid rgba(26, 67, 113, 0.2);
-        backdrop-filter: blur(10px);
-    }
-    
-    /* Sidebar text */
-    .css-1d391kg .css-1rs6os {
-        color: #1B3A7A !important;
-    }
-    
-    /* Headers in main content */
-    .main-content h1, .main-content h2, .main-content h3, .main-content h4 {
-        color: #1B3A7A !important;
-    }
-    
-    /* Dataframe */
-    .dataframe {
-        border-radius: 10px;
-        overflow: hidden;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-    }
-    .dataframe thead {
-        background: linear-gradient(135deg, #1B3A7A, #4A90D9);
-        color: white;
-    }
     
     /* Section headers */
     .section-header {
@@ -209,7 +178,7 @@ st.markdown("""
         border-bottom: 3px solid #4A90D9 !important;
     }
     
-    /* Compact login title */
+    /* Login title */
     .login-title {
         text-align: center;
         padding: 0.5rem 0;
@@ -239,7 +208,6 @@ def check_auth():
     return True
 
 def show_login():
-    # Compact login header
     st.markdown("""
     <div class="login-title">
         <h1>🏠 TenantHub</h1>
@@ -280,8 +248,7 @@ def get_default_tenants():
         'Unit': ['3B', '7C', '12A', '5D', '9E'],
         'Status': ['Active', 'Active', 'Pending', 'Active', 'Active'],
         'Rent': [1200, 1400, 1600, 1100, 1500],
-        'Lease_Start': ['2024-01-01', '2024-03-15', '2024-06-01', '2023-11-01', '2024-02-01'],
-        'Lease_End': ['2024-12-31', '2025-03-14', '2025-05-31', '2024-10-31', '2025-01-31']
+        'Move_In_Date': ['2024-01-01', '2024-03-15', '2024-06-01', '2023-11-01', '2024-02-01']
     })
 
 def get_default_properties():
@@ -311,7 +278,7 @@ def get_default_payments():
         'Tenant': ['John Smith', 'Sarah Johnson', 'Emily Brown', 'David Wilson'],
         'Unit': ['3B', '7C', '5D', '9E'],
         'Amount': [1200, 1400, 1100, 1500],
-        'Date': ['2024-10-01', '2024-10-05', '2024-10-10', '2024-10-15'],
+        'Due_Date': ['2024-11-01', '2024-11-15', '2024-11-01', '2024-11-01'],
         'Status': ['Paid', 'Paid', 'Pending', 'Paid']
     })
 
@@ -324,6 +291,8 @@ def init_data():
         st.session_state.maintenance = get_default_maintenance()
     if 'payments' not in st.session_state or not isinstance(st.session_state.payments, pd.DataFrame):
         st.session_state.payments = get_default_payments()
+    if 'agreements' not in st.session_state:
+        st.session_state.agreements = {}
 
 def download_csv(df, filename):
     if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
@@ -361,7 +330,182 @@ def upload_csv(df_type):
         except Exception as e:
             st.error(f"Error: {str(e)}")
 
-# ==================== EDIT/DELETE FUNCTIONS ====================
+# ==================== PAYMENT REMINDER FUNCTIONS ====================
+def check_payment_reminders():
+    """Check for upcoming payment due dates and show reminders"""
+    if isinstance(st.session_state.payments, pd.DataFrame) and not st.session_state.payments.empty:
+        today = datetime.now().date()
+        reminders = []
+        
+        for idx, row in st.session_state.payments.iterrows():
+            if row['Status'] != 'Paid':
+                due_date = datetime.strptime(row['Due_Date'], '%Y-%m-%d').date()
+                days_until = (due_date - today).days
+                
+                if days_until <= 10 and days_until >= 0:
+                    reminders.append({
+                        'tenant': row['Tenant'],
+                        'unit': row['Unit'],
+                        'amount': row['Amount'],
+                        'due_date': row['Due_Date'],
+                        'days': days_until,
+                        'urgent': days_until <= 3
+                    })
+                elif days_until < 0:
+                    reminders.append({
+                        'tenant': row['Tenant'],
+                        'unit': row['Unit'],
+                        'amount': row['Amount'],
+                        'due_date': row['Due_Date'],
+                        'days': days_until,
+                        'urgent': True,
+                        'overdue': True
+                    })
+        
+        return reminders
+    return []
+
+def generate_payment_dates(move_in_date):
+    """Generate payment due dates based on move-in date"""
+    move_in = datetime.strptime(move_in_date, '%Y-%m-%d').date()
+    today = datetime.now().date()
+    
+    # Get the day of month from move-in date
+    day_of_month = move_in.day
+    
+    # Generate due dates for next 12 months
+    due_dates = []
+    for month in range(12):
+        year = today.year + (today.month + month - 1) // 12
+        month_num = ((today.month - 1 + month) % 12) + 1
+        
+        # Handle months with fewer days
+        last_day = pd.Timestamp(year=year, month=month_num, day=1).days_in_month
+        due_day = min(day_of_month, last_day)
+        
+        due_date = datetime(year, month_num, due_day).date()
+        if due_date >= today:
+            due_dates.append(due_date.strftime('%Y-%m-%d'))
+    
+    return due_dates
+
+# ==================== PDF AGREEMENT GENERATOR ====================
+def generate_agreement_pdf(tenant_name, unit, rent, move_in_date):
+    """Generate a rental agreement PDF with terms and conditions"""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=72)
+    
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(
+        name='CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.HexColor('#1B3A7A'),
+        alignment=TA_CENTER,
+        spaceAfter=30
+    ))
+    styles.add(ParagraphStyle(
+        name='CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=16,
+        textColor=colors.HexColor('#1B3A7A'),
+        spaceAfter=12,
+        spaceBefore=12
+    ))
+    styles.add(ParagraphStyle(
+        name='CustomBody',
+        parent=styles['Normal'],
+        fontSize=11,
+        textColor=colors.black,
+        spaceAfter=6,
+        alignment=TA_LEFT
+    ))
+    styles.add(ParagraphStyle(
+        name='CustomFooter',
+        parent=styles['Normal'],
+        fontSize=10,
+        textColor=colors.grey,
+        alignment=TA_CENTER,
+        spaceBefore=30
+    ))
+    
+    # Build the document
+    story = []
+    
+    # Title
+    story.append(Paragraph("RENTAL AGREEMENT", styles['CustomTitle']))
+    story.append(Spacer(1, 0.25*inch))
+    
+    # Date
+    story.append(Paragraph(f"Date: {datetime.now().strftime('%B %d, %Y')}", styles['CustomBody']))
+    story.append(Spacer(1, 0.25*inch))
+    
+    # Parties
+    story.append(Paragraph("PARTIES", styles['CustomHeading']))
+    story.append(Paragraph(f"This Rental Agreement is made between TenantHub Property Management (hereinafter referred to as 'Landlord') and {tenant_name} (hereinafter referred to as 'Tenant').", styles['CustomBody']))
+    story.append(Spacer(1, 0.25*inch))
+    
+    # Property Details
+    story.append(Paragraph("PROPERTY DETAILS", styles['CustomHeading']))
+    story.append(Paragraph(f"Property Unit: {unit}", styles['CustomBody']))
+    story.append(Paragraph(f"Monthly Rent: ${rent:.2f}", styles['CustomBody']))
+    story.append(Paragraph(f"Move-in Date: {move_in_date}", styles['CustomBody']))
+    story.append(Spacer(1, 0.25*inch))
+    
+    # Terms and Conditions
+    story.append(Paragraph("TERMS AND CONDITIONS", styles['CustomHeading']))
+    
+    terms = [
+        "1. RENT PAYMENT: Tenant agrees to pay the monthly rent on or before the 1st day of each month. Rent is due on the same day each month as the move-in date.",
+        "2. LATE PAYMENT: A late fee of $50 will be charged if rent is not received within 5 days after the due date.",
+        "3. SECURITY DEPOSIT: A security deposit equal to one month's rent is required and will be held by Landlord.",
+        "4. UTILITIES: Tenant is responsible for all utility costs including electricity, water, gas, and internet.",
+        "5. MAINTENANCE: Tenant agrees to maintain the property in good condition and report any issues immediately.",
+        "6. PETS: Pets are allowed only with prior written consent and additional pet deposit.",
+        "7. SUBLEASING: Subleasing is not permitted without written consent from Landlord.",
+        "8. NOTICE: Either party must provide 30 days written notice to terminate this agreement.",
+        "9. RENT INCREASE: Rent may be increased with 60 days written notice.",
+        "10. GOVERNING LAW: This agreement is governed by the laws of the state.",
+        "11. ENTIRE AGREEMENT: This document represents the entire agreement between parties.",
+        "12. AMENDMENTS: Any amendments must be in writing and signed by both parties."
+    ]
+    
+    for term in terms:
+        story.append(Paragraph(term, styles['CustomBody']))
+    
+    story.append(Spacer(1, 0.25*inch))
+    
+    # Signatures
+    story.append(Paragraph("SIGNATURES", styles['CustomHeading']))
+    story.append(Spacer(1, 0.25*inch))
+    
+    signature_data = [
+        ["Landlord Signature:", "", "Date:", ""],
+        ["________________________", "", "______________", ""],
+        ["", "", "", ""],
+        ["Tenant Signature:", "", "Date:", ""],
+        ["________________________", "", "______________", ""]
+    ]
+    
+    sig_table = Table(signature_data, colWidths=[2.5*inch, 0.5*inch, 1.5*inch, 0.5*inch])
+    sig_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 11),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    story.append(sig_table)
+    
+    story.append(Spacer(1, 0.5*inch))
+    
+    # Footer
+    story.append(Paragraph("This agreement is legally binding. Please keep a copy for your records.", styles['CustomFooter']))
+    
+    # Build PDF
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+# ==================== DELETE FUNCTIONS ====================
 def delete_tenant(tenant_id):
     df = st.session_state.tenants
     df = df[df['ID'] != tenant_id]
@@ -413,11 +557,22 @@ def show_metrics():
     tenants_df = st.session_state.tenants
     properties_df = st.session_state.properties
     maintenance_df = st.session_state.maintenance
+    payments_df = st.session_state.payments
     
     total_tenants = len(tenants_df) if isinstance(tenants_df, pd.DataFrame) and not tenants_df.empty else 0
     total_properties = len(properties_df) if isinstance(properties_df, pd.DataFrame) and not properties_df.empty else 0
     total_revenue = tenants_df['Rent'].sum() if isinstance(tenants_df, pd.DataFrame) and not tenants_df.empty else 0
     active_maintenance = len(maintenance_df[maintenance_df['Status'] != 'Completed']) if isinstance(maintenance_df, pd.DataFrame) and not maintenance_df.empty else 0
+    
+    # Calculate overdue payments
+    overdue = 0
+    if isinstance(payments_df, pd.DataFrame) and not payments_df.empty:
+        today = datetime.now().date()
+        for _, row in payments_df.iterrows():
+            if row['Status'] != 'Paid':
+                due_date = datetime.strptime(row['Due_Date'], '%Y-%m-%d').date()
+                if due_date < today:
+                    overdue += 1
     
     with col1:
         st.markdown(f"""
@@ -449,11 +604,44 @@ def show_metrics():
     with col4:
         st.markdown(f"""
         <div class="dashboard-card red">
-            <div class="metric-label">🔧 Maintenance</div>
-            <div class="metric-value">{active_maintenance}</div>
-            <div style="font-size: 0.85rem; color: #555;">Open requests</div>
+            <div class="metric-label">⚠️ Overdue Payments</div>
+            <div class="metric-value">{overdue}</div>
+            <div style="font-size: 0.85rem; color: #555;">Need attention</div>
         </div>
         """, unsafe_allow_html=True)
+
+def show_reminders():
+    """Show payment reminders"""
+    reminders = check_payment_reminders()
+    if reminders:
+        st.markdown("### 🔔 Payment Reminders")
+        for reminder in reminders:
+            if reminder.get('overdue', False):
+                st.markdown(f"""
+                <div class="reminder-card urgent">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <strong>⚠️ OVERDUE</strong> - {reminder['tenant']} (Unit {reminder['unit']})
+                            <br>Amount: ${reminder['amount']} - Due: {reminder['due_date']}
+                            <br><span style="color: #E74C3C;">Payment is {abs(reminder['days'])} days overdue!</span>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                urgency = "urgent" if reminder['urgent'] else ""
+                st.markdown(f"""
+                <div class="reminder-card {urgency}">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <strong>⏰ Payment Due Soon</strong> - {reminder['tenant']} (Unit {reminder['unit']})
+                            <br>Amount: ${reminder['amount']} - Due: {reminder['due_date']}
+                            <br>⏳ {reminder['days']} days remaining
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        st.markdown("---")
 
 def show_tenants():
     st.markdown('<div class="main-content">', unsafe_allow_html=True)
@@ -475,25 +663,54 @@ def show_tenants():
                 rent = st.number_input("Monthly Rent ($)", min_value=0, step=50, key="tenant_rent")
                 status = st.selectbox("Status", ["Active", "Pending", "In Progress", "New"], key="tenant_status")
             
-            lease_start = st.date_input("Lease Start", datetime.now(), key="tenant_lease_start")
-            lease_end = st.date_input("Lease End", datetime.now().replace(year=datetime.now().year + 1), key="tenant_lease_end")
+            move_in_date = st.date_input("Move-in Date", datetime.now(), key="tenant_move_in")
             
-            if st.button("💾 Add Tenant", key="add_tenant_btn"):
-                new_id = len(st.session_state.tenants) + 1
-                new_tenant = pd.DataFrame({
-                    'ID': [new_id],
-                    'Name': [name],
-                    'Email': [email],
-                    'Phone': [phone],
-                    'Unit': [unit],
-                    'Status': [status],
-                    'Rent': [rent],
-                    'Lease_Start': [lease_start.strftime('%Y-%m-%d')],
-                    'Lease_End': [lease_end.strftime('%Y-%m-%d')]
-                })
-                st.session_state.tenants = pd.concat([st.session_state.tenants, new_tenant], ignore_index=True)
-                st.success("✅ Tenant added!")
-                st.rerun()
+            col_c, col_d = st.columns(2)
+            with col_c:
+                if st.button("💾 Add Tenant", key="add_tenant_btn"):
+                    new_id = len(st.session_state.tenants) + 1
+                    new_tenant = pd.DataFrame({
+                        'ID': [new_id],
+                        'Name': [name],
+                        'Email': [email],
+                        'Phone': [phone],
+                        'Unit': [unit],
+                        'Status': [status],
+                        'Rent': [rent],
+                        'Move_In_Date': [move_in_date.strftime('%Y-%m-%d')]
+                    })
+                    st.session_state.tenants = pd.concat([st.session_state.tenants, new_tenant], ignore_index=True)
+                    
+                    # Generate payment schedule
+                    due_dates = generate_payment_dates(move_in_date.strftime('%Y-%m-%d'))
+                    for due_date in due_dates:
+                        new_payment = pd.DataFrame({
+                            'ID': [len(st.session_state.payments) + 1],
+                            'Tenant': [name],
+                            'Unit': [unit],
+                            'Amount': [rent],
+                            'Due_Date': [due_date],
+                            'Status': ['Pending']
+                        })
+                        st.session_state.payments = pd.concat([st.session_state.payments, new_payment], ignore_index=True)
+                    
+                    st.success("✅ Tenant added with payment schedule!")
+                    st.rerun()
+            
+            with col_d:
+                if st.button("📄 Generate Agreement", key="gen_agreement_btn"):
+                    if name and unit and rent > 0:
+                        pdf_buffer = generate_agreement_pdf(name, unit, rent, move_in_date.strftime('%Y-%m-%d'))
+                        st.download_button(
+                            label="📥 Download Agreement PDF",
+                            data=pdf_buffer,
+                            file_name=f"agreement_{name}_{unit}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True,
+                            key=f"download_agreement_{name}"
+                        )
+                    else:
+                        st.warning("Please fill in all fields first!")
     
     with col2:
         with st.expander("📊 Data Management", expanded=False):
@@ -511,7 +728,7 @@ def show_tenants():
             ]
         
         for idx, row in filtered_df.iterrows():
-            col1, col2, col3, col4, col5 = st.columns([2, 1.5, 1, 1, 1])
+            col1, col2, col3, col4, col5, col6 = st.columns([1.5, 1.5, 1, 1, 0.8, 0.8])
             
             with col1:
                 st.markdown(f"**{row['Name']}**")
@@ -520,6 +737,7 @@ def show_tenants():
             with col2:
                 st.write(f"Unit: {row['Unit']}")
                 st.write(f"Rent: ${row['Rent']}")
+                st.caption(f"Move-in: {row['Move_In_Date']}")
             
             with col3:
                 status_class = {
@@ -531,6 +749,18 @@ def show_tenants():
                 st.markdown(f'<span class="status-badge {status_class}">{row["Status"]}</span>', unsafe_allow_html=True)
             
             with col4:
+                if st.button(f"📄 Agreement", key=f"agreement_{row['ID']}_{idx}", use_container_width=True):
+                    pdf_buffer = generate_agreement_pdf(row['Name'], row['Unit'], row['Rent'], row['Move_In_Date'])
+                    st.download_button(
+                        label="📥 Download PDF",
+                        data=pdf_buffer,
+                        file_name=f"agreement_{row['Name']}_{row['Unit']}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True,
+                        key=f"download_agreement_{row['ID']}"
+                    )
+            
+            with col5:
                 if st.button(f"✏️ Edit", key=f"edit_tenant_{row['ID']}_{idx}", use_container_width=True):
                     with st.expander(f"✏️ Editing: {row['Name']}", expanded=True):
                         col_a, col_b = st.columns(2)
@@ -565,7 +795,7 @@ def show_tenants():
                             if st.button("❌ Cancel", key=f"cancel_tenant_{row['ID']}"):
                                 st.rerun()
             
-            with col5:
+            with col6:
                 if st.button(f"🗑️ Delete", key=f"del_tenant_{row['ID']}_{idx}", use_container_width=True):
                     delete_tenant(row['ID'])
             
@@ -795,6 +1025,9 @@ def show_payments():
     st.markdown('<div class="main-content">', unsafe_allow_html=True)
     st.markdown('<h2 class="section-header">💰 Payment Management</h2>', unsafe_allow_html=True)
     
+    # Show reminders
+    show_reminders()
+    
     col1, col2 = st.columns([3, 1])
     
     with col1:
@@ -817,7 +1050,7 @@ def show_payments():
                     'Tenant': [tenant],
                     'Unit': [unit],
                     'Amount': [amount],
-                    'Date': [payment_date.strftime('%Y-%m-%d')],
+                    'Due_Date': [payment_date.strftime('%Y-%m-%d')],
                     'Status': [status]
                 })
                 st.session_state.payments = pd.concat([st.session_state.payments, new_payment], ignore_index=True)
@@ -831,18 +1064,25 @@ def show_payments():
     
     if isinstance(st.session_state.payments, pd.DataFrame) and not st.session_state.payments.empty:
         total_collected = st.session_state.payments[st.session_state.payments['Status'] == 'Paid']['Amount'].sum()
+        total_pending = st.session_state.payments[st.session_state.payments['Status'] == 'Pending']['Amount'].sum()
         
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("💰 Total Collected", f"${total_collected:,}")
         with col2:
-            pending = st.session_state.payments[st.session_state.payments['Status'] == 'Pending']
-            st.metric("⏳ Pending", len(pending))
+            st.metric("⏳ Pending", f"${total_pending:,}")
         with col3:
             st.metric("📊 Total Records", len(st.session_state.payments))
         
-        for idx, row in st.session_state.payments.iterrows():
-            col1, col2, col3, col4, col5 = st.columns([1.5, 1.5, 1, 1, 1])
+        # Filter options
+        filter_status = st.selectbox("Filter by status", ["All", "Paid", "Pending", "Overdue"], key="payment_filter")
+        
+        filtered_df = st.session_state.payments.copy()
+        if filter_status != "All":
+            filtered_df = filtered_df[filtered_df['Status'] == filter_status]
+        
+        for idx, row in filtered_df.iterrows():
+            col1, col2, col3, col4, col5, col6 = st.columns([1.5, 1, 1, 1, 0.8, 0.8])
             
             with col1:
                 st.markdown(f"**{row['Tenant']}**")
@@ -850,9 +1090,11 @@ def show_payments():
             
             with col2:
                 st.write(f"${row['Amount']}")
-                st.caption(row['Date'])
             
             with col3:
+                st.caption(f"Due: {row['Due_Date']}")
+            
+            with col4:
                 status_class = {
                     "Paid": "status-paid",
                     "Pending": "status-pending",
@@ -860,7 +1102,7 @@ def show_payments():
                 }.get(row['Status'], "status-active")
                 st.markdown(f'<span class="status-badge {status_class}">{row["Status"]}</span>', unsafe_allow_html=True)
             
-            with col4:
+            with col5:
                 if st.button(f"✏️ Edit", key=f"edit_payment_{row['ID']}_{idx}", use_container_width=True):
                     with st.expander(f"✏️ Editing: {row['Tenant']}", expanded=True):
                         col_a, col_b = st.columns(2)
@@ -891,7 +1133,7 @@ def show_payments():
                             if st.button("❌ Cancel", key=f"cancel_payment_{row['ID']}"):
                                 st.rerun()
             
-            with col5:
+            with col6:
                 if st.button(f"🗑️ Delete", key=f"del_payment_{row['ID']}_{idx}", use_container_width=True):
                     delete_payment(row['ID'])
             
@@ -983,6 +1225,9 @@ def main():
             }
             st.bar_chart(chart_data, use_container_width=True)
             st.markdown("</div>", unsafe_allow_html=True)
+        
+        # Show reminders on dashboard
+        show_reminders()
     
     elif page == "👥 Tenants":
         show_tenants()
