@@ -18,7 +18,7 @@ try:
     REPORTLAB_AVAILABLE = True
 except ImportError:
     REPORTLAB_AVAILABLE = False
-    st.warning("📄 ReportLab not installed. Using simple text agreement format.")
+    # Silent fallback - no warning shown
 
 # ==================== PAGE CONFIGURATION ====================
 st.set_page_config(
@@ -400,118 +400,122 @@ def generate_payment_dates(move_in_date):
 def generate_agreement_pdf(tenant_name, unit, rent, move_in_date):
     """Generate a rental agreement PDF with terms and conditions"""
     if REPORTLAB_AVAILABLE:
-        buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=72)
-        
-        styles = getSampleStyleSheet()
-        styles.add(ParagraphStyle(
-            name='CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=24,
-            textColor=colors.HexColor('#1B3A7A'),
-            alignment=TA_CENTER,
-            spaceAfter=30
-        ))
-        styles.add(ParagraphStyle(
-            name='CustomHeading',
-            parent=styles['Heading2'],
-            fontSize=16,
-            textColor=colors.HexColor('#1B3A7A'),
-            spaceAfter=12,
-            spaceBefore=12
-        ))
-        styles.add(ParagraphStyle(
-            name='CustomBody',
-            parent=styles['Normal'],
-            fontSize=11,
-            textColor=colors.black,
-            spaceAfter=6,
-            alignment=TA_LEFT
-        ))
-        styles.add(ParagraphStyle(
-            name='CustomFooter',
-            parent=styles['Normal'],
-            fontSize=10,
-            textColor=colors.grey,
-            alignment=TA_CENTER,
-            spaceBefore=30
-        ))
-        
-        # Build the document
-        story = []
-        
-        # Title
-        story.append(Paragraph("RENTAL AGREEMENT", styles['CustomTitle']))
-        story.append(Spacer(1, 0.25*inch))
-        
-        # Date
-        story.append(Paragraph(f"Date: {datetime.now().strftime('%B %d, %Y')}", styles['CustomBody']))
-        story.append(Spacer(1, 0.25*inch))
-        
-        # Parties
-        story.append(Paragraph("PARTIES", styles['CustomHeading']))
-        story.append(Paragraph(f"This Rental Agreement is made between TenantHub Property Management (hereinafter referred to as 'Landlord') and {tenant_name} (hereinafter referred to as 'Tenant').", styles['CustomBody']))
-        story.append(Spacer(1, 0.25*inch))
-        
-        # Property Details
-        story.append(Paragraph("PROPERTY DETAILS", styles['CustomHeading']))
-        story.append(Paragraph(f"Property Unit: {unit}", styles['CustomBody']))
-        story.append(Paragraph(f"Monthly Rent: ${rent:.2f}", styles['CustomBody']))
-        story.append(Paragraph(f"Move-in Date: {move_in_date}", styles['CustomBody']))
-        story.append(Spacer(1, 0.25*inch))
-        
-        # Terms and Conditions
-        story.append(Paragraph("TERMS AND CONDITIONS", styles['CustomHeading']))
-        
-        terms = [
-            "1. RENT PAYMENT: Tenant agrees to pay the monthly rent on or before the 1st day of each month. Rent is due on the same day each month as the move-in date.",
-            "2. LATE PAYMENT: A late fee of $50 will be charged if rent is not received within 5 days after the due date.",
-            "3. SECURITY DEPOSIT: A security deposit equal to one month's rent is required and will be held by Landlord.",
-            "4. UTILITIES: Tenant is responsible for all utility costs including electricity, water, gas, and internet.",
-            "5. MAINTENANCE: Tenant agrees to maintain the property in good condition and report any issues immediately.",
-            "6. PETS: Pets are allowed only with prior written consent and additional pet deposit.",
-            "7. SUBLEASING: Subleasing is not permitted without written consent from Landlord.",
-            "8. NOTICE: Either party must provide 30 days written notice to terminate this agreement.",
-            "9. RENT INCREASE: Rent may be increased with 60 days written notice.",
-            "10. GOVERNING LAW: This agreement is governed by the laws of the state.",
-            "11. ENTIRE AGREEMENT: This document represents the entire agreement between parties.",
-            "12. AMENDMENTS: Any amendments must be in writing and signed by both parties."
-        ]
-        
-        for term in terms:
-            story.append(Paragraph(term, styles['CustomBody']))
-        
-        story.append(Spacer(1, 0.25*inch))
-        
-        # Signatures
-        story.append(Paragraph("SIGNATURES", styles['CustomHeading']))
-        story.append(Spacer(1, 0.25*inch))
-        
-        signature_data = [
-            ["Landlord Signature:", "", "Date:", ""],
-            ["________________________", "", "______________", ""],
-            ["", "", "", ""],
-            ["Tenant Signature:", "", "Date:", ""],
-            ["________________________", "", "______________", ""]
-        ]
-        
-        sig_table = Table(signature_data, colWidths=[2.5*inch, 0.5*inch, 1.5*inch, 0.5*inch])
-        sig_table.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 11),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ]))
-        story.append(sig_table)
-        
-        story.append(Spacer(1, 0.5*inch))
-        
-        # Footer
-        story.append(Paragraph("This agreement is legally binding. Please keep a copy for your records.", styles['CustomFooter']))
-        
-        # Build PDF
-        doc.build(story)
-        buffer.seek(0)
-        return buffer
+        try:
+            buffer = io.BytesIO()
+            doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=72)
+            
+            styles = getSampleStyleSheet()
+            styles.add(ParagraphStyle(
+                name='CustomTitle',
+                parent=styles['Heading1'],
+                fontSize=24,
+                textColor=colors.HexColor('#1B3A7A'),
+                alignment=TA_CENTER,
+                spaceAfter=30
+            ))
+            styles.add(ParagraphStyle(
+                name='CustomHeading',
+                parent=styles['Heading2'],
+                fontSize=16,
+                textColor=colors.HexColor('#1B3A7A'),
+                spaceAfter=12,
+                spaceBefore=12
+            ))
+            styles.add(ParagraphStyle(
+                name='CustomBody',
+                parent=styles['Normal'],
+                fontSize=11,
+                textColor=colors.black,
+                spaceAfter=6,
+                alignment=TA_LEFT
+            ))
+            styles.add(ParagraphStyle(
+                name='CustomFooter',
+                parent=styles['Normal'],
+                fontSize=10,
+                textColor=colors.grey,
+                alignment=TA_CENTER,
+                spaceBefore=30
+            ))
+            
+            # Build the document
+            story = []
+            
+            # Title
+            story.append(Paragraph("RENTAL AGREEMENT", styles['CustomTitle']))
+            story.append(Spacer(1, 0.25*inch))
+            
+            # Date
+            story.append(Paragraph(f"Date: {datetime.now().strftime('%B %d, %Y')}", styles['CustomBody']))
+            story.append(Spacer(1, 0.25*inch))
+            
+            # Parties
+            story.append(Paragraph("PARTIES", styles['CustomHeading']))
+            story.append(Paragraph(f"This Rental Agreement is made between TenantHub Property Management (hereinafter referred to as 'Landlord') and {tenant_name} (hereinafter referred to as 'Tenant').", styles['CustomBody']))
+            story.append(Spacer(1, 0.25*inch))
+            
+            # Property Details
+            story.append(Paragraph("PROPERTY DETAILS", styles['CustomHeading']))
+            story.append(Paragraph(f"Property Unit: {unit}", styles['CustomBody']))
+            story.append(Paragraph(f"Monthly Rent: ${rent:.2f}", styles['CustomBody']))
+            story.append(Paragraph(f"Move-in Date: {move_in_date}", styles['CustomBody']))
+            story.append(Spacer(1, 0.25*inch))
+            
+            # Terms and Conditions
+            story.append(Paragraph("TERMS AND CONDITIONS", styles['CustomHeading']))
+            
+            terms = [
+                "1. RENT PAYMENT: Tenant agrees to pay the monthly rent on or before the 1st day of each month. Rent is due on the same day each month as the move-in date.",
+                "2. LATE PAYMENT: A late fee of $50 will be charged if rent is not received within 5 days after the due date.",
+                "3. SECURITY DEPOSIT: A security deposit equal to one month's rent is required and will be held by Landlord.",
+                "4. UTILITIES: Tenant is responsible for all utility costs including electricity, water, gas, and internet.",
+                "5. MAINTENANCE: Tenant agrees to maintain the property in good condition and report any issues immediately.",
+                "6. PETS: Pets are allowed only with prior written consent and additional pet deposit.",
+                "7. SUBLEASING: Subleasing is not permitted without written consent from Landlord.",
+                "8. NOTICE: Either party must provide 30 days written notice to terminate this agreement.",
+                "9. RENT INCREASE: Rent may be increased with 60 days written notice.",
+                "10. GOVERNING LAW: This agreement is governed by the laws of the state.",
+                "11. ENTIRE AGREEMENT: This document represents the entire agreement between parties.",
+                "12. AMENDMENTS: Any amendments must be in writing and signed by both parties."
+            ]
+            
+            for term in terms:
+                story.append(Paragraph(term, styles['CustomBody']))
+            
+            story.append(Spacer(1, 0.25*inch))
+            
+            # Signatures
+            story.append(Paragraph("SIGNATURES", styles['CustomHeading']))
+            story.append(Spacer(1, 0.25*inch))
+            
+            signature_data = [
+                ["Landlord Signature:", "", "Date:", ""],
+                ["________________________", "", "______________", ""],
+                ["", "", "", ""],
+                ["Tenant Signature:", "", "Date:", ""],
+                ["________________________", "", "______________", ""]
+            ]
+            
+            sig_table = Table(signature_data, colWidths=[2.5*inch, 0.5*inch, 1.5*inch, 0.5*inch])
+            sig_table.setStyle(TableStyle([
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 11),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            story.append(sig_table)
+            
+            story.append(Spacer(1, 0.5*inch))
+            
+            # Footer
+            story.append(Paragraph("This agreement is legally binding. Please keep a copy for your records.", styles['CustomFooter']))
+            
+            # Build PDF
+            doc.build(story)
+            buffer.seek(0)
+            return buffer
+        except Exception as e:
+            # If PDF generation fails, fallback to text
+            return generate_text_agreement(tenant_name, unit, rent, move_in_date)
     else:
         # Fallback: Create a simple text agreement
         return generate_text_agreement(tenant_name, unit, rent, move_in_date)
@@ -794,7 +798,7 @@ def show_tenants():
                             file_name=f"agreement_{name}_{unit}.{file_extension}",
                             mime="application/pdf" if REPORTLAB_AVAILABLE else "text/plain",
                             use_container_width=True,
-                            key=f"download_agreement_{name}"
+                            key=f"download_agreement_{name}_{datetime.now().timestamp()}"
                         )
                     else:
                         st.warning("Please fill in all fields first!")
@@ -845,7 +849,7 @@ def show_tenants():
                         file_name=f"agreement_{row['Name']}_{row['Unit']}.{file_extension}",
                         mime="application/pdf" if REPORTLAB_AVAILABLE else "text/plain",
                         use_container_width=True,
-                        key=f"download_agreement_{row['ID']}"
+                        key=f"download_agreement_{row['ID']}_{datetime.now().timestamp()}"
                     )
             
             with col5:
@@ -1277,43 +1281,6 @@ def main():
     
     if page == "📊 Dashboard":
         show_metrics()
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("""
-            <div style="background: rgba(255,255,255,0.95); padding: 1.5rem; border-radius: 15px; backdrop-filter: blur(10px);">
-                <h3 style="color: #1B3A7A;">📋 Recent Activity</h3>
-            """, unsafe_allow_html=True)
-            
-            activities = [
-                "🔵 New tenant signed lease for Unit 3B",
-                "🟢 Maintenance resolved for Unit 12A",
-                "🟡 Rent payment received from Unit 7C",
-                "🔴 Inspection scheduled for Unit 5D"
-            ]
-            for activity in activities:
-                st.markdown(f"""
-                <div style="padding: 0.5rem 0; border-bottom: 1px solid #eee;">
-                    {activity}
-                    <span style="color: #999; font-size: 0.8rem; float: right;">{datetime.now().strftime('%H:%M')}</span>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            st.markdown("</div>", unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown("""
-            <div style="background: rgba(255,255,255,0.95); padding: 1.5rem; border-radius: 15px; backdrop-filter: blur(10px);">
-                <h3 style="color: #1B3A7A;">📈 Revenue Overview</h3>
-            """, unsafe_allow_html=True)
-            
-            chart_data = {
-                'Mon': 1200, 'Tue': 1400, 'Wed': 1100,
-                'Thu': 1600, 'Fri': 1800, 'Sat': 900, 'Sun': 700
-            }
-            st.bar_chart(chart_data, use_container_width=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-        
         # Show reminders on dashboard
         show_reminders()
     
