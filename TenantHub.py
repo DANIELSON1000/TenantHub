@@ -12,7 +12,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 import re
-import base64
+import pickle
 
 # Try to import reportlab, fallback to simple text if not available
 try:
@@ -27,46 +27,66 @@ except ImportError:
     REPORTLAB_AVAILABLE = False
 
 # ==================== DATA PERSISTENCE ====================
-# GitHub repository for storing data files
-# You'll need to encode your data and save it as base64 strings in st.secrets
-# or use a simple file-based storage approach
-
+# Use Streamlit's session state with file-based persistence
 DATA_DIR = "data"
-if not os.path.exists(DATA_DIR):
-    os.makedirs(DATA_DIR)
+
+def ensure_data_dir():
+    """Ensure data directory exists"""
+    if not os.path.exists(DATA_DIR):
+        os.makedirs(DATA_DIR)
 
 def save_data_to_csv(df, filename):
     """Save DataFrame to CSV file"""
-    if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
-        filepath = os.path.join(DATA_DIR, filename)
-        df.to_csv(filepath, index=False)
-        return True
-    return False
+    try:
+        ensure_data_dir()
+        if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
+            filepath = os.path.join(DATA_DIR, filename)
+            df.to_csv(filepath, index=False)
+            return True
+        elif df is not None and isinstance(df, pd.DataFrame) and df.empty:
+            # Save empty dataframe
+            filepath = os.path.join(DATA_DIR, filename)
+            df.to_csv(filepath, index=False)
+            return True
+        return False
+    except Exception as e:
+        print(f"Error saving {filename}: {e}")
+        return False
 
 def load_data_from_csv(filename, default_df):
     """Load DataFrame from CSV file, return default if not found"""
-    filepath = os.path.join(DATA_DIR, filename)
-    if os.path.exists(filepath):
-        try:
+    try:
+        ensure_data_dir()
+        filepath = os.path.join(DATA_DIR, filename)
+        if os.path.exists(filepath):
             df = pd.read_csv(filepath)
             if not df.empty:
                 return df
-        except Exception as e:
-            print(f"Error loading {filename}: {e}")
-    return default_df
+        return default_df
+    except Exception as e:
+        print(f"Error loading {filename}: {e}")
+        return default_df
 
 def save_all_data():
     """Save all data to CSV files"""
     try:
+        ensure_data_dir()
+        success = True
+        
         if 'tenants' in st.session_state and isinstance(st.session_state.tenants, pd.DataFrame):
-            save_data_to_csv(st.session_state.tenants, 'tenants.csv')
+            if not save_data_to_csv(st.session_state.tenants, 'tenants.csv'):
+                success = False
         if 'properties' in st.session_state and isinstance(st.session_state.properties, pd.DataFrame):
-            save_data_to_csv(st.session_state.properties, 'properties.csv')
+            if not save_data_to_csv(st.session_state.properties, 'properties.csv'):
+                success = False
         if 'maintenance' in st.session_state and isinstance(st.session_state.maintenance, pd.DataFrame):
-            save_data_to_csv(st.session_state.maintenance, 'maintenance.csv')
+            if not save_data_to_csv(st.session_state.maintenance, 'maintenance.csv'):
+                success = False
         if 'payments' in st.session_state and isinstance(st.session_state.payments, pd.DataFrame):
-            save_data_to_csv(st.session_state.payments, 'payments.csv')
-        return True
+            if not save_data_to_csv(st.session_state.payments, 'payments.csv'):
+                success = False
+        
+        return success
     except Exception as e:
         print(f"Error saving data: {e}")
         return False
@@ -74,14 +94,31 @@ def save_all_data():
 def load_all_data():
     """Load all data from CSV files"""
     try:
-        st.session_state.tenants = load_data_from_csv('tenants.csv', get_default_tenants())
-        st.session_state.properties = load_data_from_csv('properties.csv', get_default_properties())
-        st.session_state.maintenance = load_data_from_csv('maintenance.csv', get_default_maintenance())
-        st.session_state.payments = load_data_from_csv('payments.csv', get_default_payments())
+        ensure_data_dir()
+        
+        # Only load if data doesn't exist in session state or is empty
+        if 'tenants' not in st.session_state or st.session_state.tenants.empty:
+            st.session_state.tenants = load_data_from_csv('tenants.csv', get_default_tenants())
+        if 'properties' not in st.session_state or st.session_state.properties.empty:
+            st.session_state.properties = load_data_from_csv('properties.csv', get_default_properties())
+        if 'maintenance' not in st.session_state or st.session_state.maintenance.empty:
+            st.session_state.maintenance = load_data_from_csv('maintenance.csv', get_default_maintenance())
+        if 'payments' not in st.session_state or st.session_state.payments.empty:
+            st.session_state.payments = load_data_from_csv('payments.csv', get_default_payments())
+        
         return True
     except Exception as e:
         print(f"Error loading data: {e}")
         return False
+
+def reset_to_defaults():
+    """Reset all data to defaults"""
+    st.session_state.tenants = get_default_tenants()
+    st.session_state.properties = get_default_properties()
+    st.session_state.maintenance = get_default_maintenance()
+    st.session_state.payments = get_default_payments()
+    save_all_data()
+    st.success("✅ Reset to default data!")
 
 # ==================== EMAIL CONFIGURATION ====================
 # Gmail App Password Configuration
@@ -196,7 +233,7 @@ def generate_full_report():
     # Maintenance
     report.append("MAINTENANCE:")
     report.append("-" * 40)
-    if isinstance(st.session_state.maintenance, pd.DataFrame) and not st.session_state.maintenance.empty():
+    if isinstance(st.session_state.maintenance, pd.DataFrame) and not st.session_state.maintenance.empty:
         open_issues = st.session_state.maintenance[st.session_state.maintenance['Status'] != 'Completed']
         report.append(f"  Open Issues: {len(open_issues)}")
         for _, issue in open_issues.iterrows():
@@ -543,8 +580,9 @@ def get_default_payments():
 
 def init_data():
     """Initialize data from CSV files if they exist, otherwise use defaults"""
+    ensure_data_dir()
+    
     if 'tenants' not in st.session_state:
-        # Try to load from CSV first
         st.session_state.tenants = load_data_from_csv('tenants.csv', get_default_tenants())
     if 'properties' not in st.session_state:
         st.session_state.properties = load_data_from_csv('properties.csv', get_default_properties())
@@ -601,55 +639,63 @@ def check_payment_reminders():
         
         for idx, row in st.session_state.payments.iterrows():
             if row['Status'] != 'Paid':
-                due_date = datetime.strptime(row['Due_Date'], '%Y-%m-%d').date()
-                days_until = (due_date - today).days
-                
-                if days_until <= 10 and days_until >= 0:
-                    reminders.append({
-                        'tenant': row['Tenant'],
-                        'unit': row['Unit'],
-                        'amount': row['Amount'],
-                        'due_date': row['Due_Date'],
-                        'days': days_until,
-                        'urgent': days_until <= 3
-                    })
-                elif days_until < 0:
-                    reminders.append({
-                        'tenant': row['Tenant'],
-                        'unit': row['Unit'],
-                        'amount': row['Amount'],
-                        'due_date': row['Due_Date'],
-                        'days': days_until,
-                        'urgent': True,
-                        'overdue': True
-                    })
+                try:
+                    due_date = datetime.strptime(row['Due_Date'], '%Y-%m-%d').date()
+                    days_until = (due_date - today).days
+                    
+                    if days_until <= 10 and days_until >= 0:
+                        reminders.append({
+                            'tenant': row['Tenant'],
+                            'unit': row['Unit'],
+                            'amount': row['Amount'],
+                            'due_date': row['Due_Date'],
+                            'days': days_until,
+                            'urgent': days_until <= 3
+                        })
+                    elif days_until < 0:
+                        reminders.append({
+                            'tenant': row['Tenant'],
+                            'unit': row['Unit'],
+                            'amount': row['Amount'],
+                            'due_date': row['Due_Date'],
+                            'days': days_until,
+                            'urgent': True,
+                            'overdue': True
+                        })
+                except:
+                    continue
         
         return reminders
     return []
 
 def generate_payment_dates(move_in_date):
     """Generate payment due dates based on move-in date"""
-    move_in = datetime.strptime(move_in_date, '%Y-%m-%d').date()
-    today = datetime.now().date()
-    
-    # Get the day of month from move-in date
-    day_of_month = move_in.day
-    
-    # Generate due dates for next 12 months
-    due_dates = []
-    for month in range(12):
-        year = today.year + (today.month + month - 1) // 12
-        month_num = ((today.month - 1 + month) % 12) + 1
+    try:
+        move_in = datetime.strptime(move_in_date, '%Y-%m-%d').date()
+        today = datetime.now().date()
         
-        # Handle months with fewer days
-        last_day = pd.Timestamp(year=year, month=month_num, day=1).days_in_month
-        due_day = min(day_of_month, last_day)
+        # Get the day of month from move-in date
+        day_of_month = move_in.day
         
-        due_date = datetime(year, month_num, due_day).date()
-        if due_date >= today:
-            due_dates.append(due_date.strftime('%Y-%m-%d'))
-    
-    return due_dates
+        # Generate due dates for next 12 months
+        due_dates = []
+        for month in range(12):
+            year = today.year + (today.month + month - 1) // 12
+            month_num = ((today.month - 1 + month) % 12) + 1
+            
+            # Handle months with fewer days
+            try:
+                last_day = pd.Timestamp(year=year, month=month_num, day=1).days_in_month
+                due_day = min(day_of_month, last_day)
+                due_date = datetime(year, month_num, due_day).date()
+                if due_date >= today:
+                    due_dates.append(due_date.strftime('%Y-%m-%d'))
+            except:
+                continue
+        
+        return due_dates
+    except:
+        return []
 
 # ==================== PDF AGREEMENT GENERATOR ====================
 def generate_agreement_pdf(tenant_name, unit, rent, move_in_date):
@@ -990,9 +1036,12 @@ def show_metrics():
         today = datetime.now().date()
         for _, row in payments_df.iterrows():
             if row['Status'] != 'Paid':
-                due_date = datetime.strptime(row['Due_Date'], '%Y-%m-%d').date()
-                if due_date < today:
-                    overdue += 1
+                try:
+                    due_date = datetime.strptime(row['Due_Date'], '%Y-%m-%d').date()
+                    if due_date < today:
+                        overdue += 1
+                except:
+                    continue
     
     with col1:
         st.markdown(f"""
@@ -1282,9 +1331,12 @@ def show_properties():
                 st.write(f"Units: {row['Units']} ({row['Occupancy']} occupied)")
             
             with col3:
-                occupancy_pct = int((row['Occupancy'] / row['Units']) * 100)
-                st.progress(occupancy_pct / 100)
-                st.caption(f"{occupancy_pct}% occupied")
+                try:
+                    occupancy_pct = int((row['Occupancy'] / row['Units']) * 100)
+                    st.progress(occupancy_pct / 100)
+                    st.caption(f"{occupancy_pct}% occupied")
+                except:
+                    st.caption("N/A")
             
             with col4:
                 if st.button(f"✏️ Edit", key=f"edit_prop_{row['ID']}_{idx}", use_container_width=True):
@@ -1626,6 +1678,11 @@ def show_sidebar():
         if st.button("💾 Save Data Now", use_container_width=True, key="save_data_btn"):
             save_all_data()
             st.success("✅ Data saved successfully!")
+        
+        # Reset data button
+        if st.button("🔄 Reset to Default Data", use_container_width=True, key="reset_data_btn"):
+            reset_to_defaults()
+            st.rerun()
         
         st.markdown("---")
         logout()
