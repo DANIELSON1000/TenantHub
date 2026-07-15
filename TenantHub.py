@@ -12,6 +12,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 import re
+import base64
 
 # Try to import reportlab, fallback to simple text if not available
 try:
@@ -25,13 +26,70 @@ try:
 except ImportError:
     REPORTLAB_AVAILABLE = False
 
+# ==================== DATA PERSISTENCE ====================
+# GitHub repository for storing data files
+# You'll need to encode your data and save it as base64 strings in st.secrets
+# or use a simple file-based storage approach
+
+DATA_DIR = "data"
+if not os.path.exists(DATA_DIR):
+    os.makedirs(DATA_DIR)
+
+def save_data_to_csv(df, filename):
+    """Save DataFrame to CSV file"""
+    if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
+        filepath = os.path.join(DATA_DIR, filename)
+        df.to_csv(filepath, index=False)
+        return True
+    return False
+
+def load_data_from_csv(filename, default_df):
+    """Load DataFrame from CSV file, return default if not found"""
+    filepath = os.path.join(DATA_DIR, filename)
+    if os.path.exists(filepath):
+        try:
+            df = pd.read_csv(filepath)
+            if not df.empty:
+                return df
+        except Exception as e:
+            print(f"Error loading {filename}: {e}")
+    return default_df
+
+def save_all_data():
+    """Save all data to CSV files"""
+    try:
+        if 'tenants' in st.session_state and isinstance(st.session_state.tenants, pd.DataFrame):
+            save_data_to_csv(st.session_state.tenants, 'tenants.csv')
+        if 'properties' in st.session_state and isinstance(st.session_state.properties, pd.DataFrame):
+            save_data_to_csv(st.session_state.properties, 'properties.csv')
+        if 'maintenance' in st.session_state and isinstance(st.session_state.maintenance, pd.DataFrame):
+            save_data_to_csv(st.session_state.maintenance, 'maintenance.csv')
+        if 'payments' in st.session_state and isinstance(st.session_state.payments, pd.DataFrame):
+            save_data_to_csv(st.session_state.payments, 'payments.csv')
+        return True
+    except Exception as e:
+        print(f"Error saving data: {e}")
+        return False
+
+def load_all_data():
+    """Load all data from CSV files"""
+    try:
+        st.session_state.tenants = load_data_from_csv('tenants.csv', get_default_tenants())
+        st.session_state.properties = load_data_from_csv('properties.csv', get_default_properties())
+        st.session_state.maintenance = load_data_from_csv('maintenance.csv', get_default_maintenance())
+        st.session_state.payments = load_data_from_csv('payments.csv', get_default_payments())
+        return True
+    except Exception as e:
+        print(f"Error loading data: {e}")
+        return False
+
 # ==================== EMAIL CONFIGURATION ====================
 # Gmail App Password Configuration
 EMAIL_SENDER = "ndahabonimanadaniel13@gmail.com"
 EMAIL_PASSWORD = "xsfa ooya nbnn pofr"  # App password
 EMAIL_RECIPIENT = "ndahabonimanadaniel13@gmail.com"
 
-def send_email_report(recipient_email, subject, body, attachment=None):
+def send_email_report(recipient_email, subject, body, attachment=None, attachment_name=None):
     """
     Send email report with optional attachment
     """
@@ -50,10 +108,16 @@ def send_email_report(recipient_email, subject, body, attachment=None):
             part = MIMEBase('application', 'octet-stream')
             part.set_payload(attachment.getvalue())
             encoders.encode_base64(part)
-            part.add_header(
-                'Content-Disposition',
-                f'attachment; filename= {attachment.name}'
-            )
+            if attachment_name:
+                part.add_header(
+                    'Content-Disposition',
+                    f'attachment; filename= {attachment_name}'
+                )
+            else:
+                part.add_header(
+                    'Content-Disposition',
+                    'attachment; filename= report.csv'
+                )
             msg.attach(part)
         
         # Send email
@@ -86,7 +150,7 @@ def generate_payment_report():
     return None
 
 def generate_full_report():
-    """Generate full system report"""
+    """Generate full system report with HTML formatting for email"""
     report = []
     report.append("=" * 60)
     report.append("TENANTHUB - SYSTEM REPORT")
@@ -377,6 +441,16 @@ st.markdown("""
         font-size: 1rem;
         margin: 0.2rem 0 0 0;
     }
+    
+    /* Data save indicator */
+    .save-indicator {
+        background: #D5F5E3;
+        padding: 0.3rem 1rem;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        color: #1A7A3A;
+        border: 1px solid #2ECC71;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -409,6 +483,7 @@ def show_login():
             if username == "admin" and password == "admin123":
                 st.session_state.logged_in = True
                 st.session_state.username = username
+                load_all_data()  # Load data on login
                 st.rerun()
             else:
                 st.error("❌ Invalid credentials!")
@@ -418,6 +493,7 @@ def show_login():
 
 def logout():
     if st.sidebar.button("🚪 Logout", use_container_width=True, key="logout_button"):
+        save_all_data()  # Save data on logout
         st.session_state.logged_in = False
         st.rerun()
 
@@ -466,14 +542,16 @@ def get_default_payments():
     })
 
 def init_data():
-    if 'tenants' not in st.session_state or not isinstance(st.session_state.tenants, pd.DataFrame):
-        st.session_state.tenants = get_default_tenants()
-    if 'properties' not in st.session_state or not isinstance(st.session_state.properties, pd.DataFrame):
-        st.session_state.properties = get_default_properties()
-    if 'maintenance' not in st.session_state or not isinstance(st.session_state.maintenance, pd.DataFrame):
-        st.session_state.maintenance = get_default_maintenance()
-    if 'payments' not in st.session_state or not isinstance(st.session_state.payments, pd.DataFrame):
-        st.session_state.payments = get_default_payments()
+    """Initialize data from CSV files if they exist, otherwise use defaults"""
+    if 'tenants' not in st.session_state:
+        # Try to load from CSV first
+        st.session_state.tenants = load_data_from_csv('tenants.csv', get_default_tenants())
+    if 'properties' not in st.session_state:
+        st.session_state.properties = load_data_from_csv('properties.csv', get_default_properties())
+    if 'maintenance' not in st.session_state:
+        st.session_state.maintenance = load_data_from_csv('maintenance.csv', get_default_maintenance())
+    if 'payments' not in st.session_state:
+        st.session_state.payments = load_data_from_csv('payments.csv', get_default_payments())
     if 'agreements' not in st.session_state:
         st.session_state.agreements = {}
 
@@ -509,6 +587,7 @@ def upload_csv(df_type):
                     st.session_state.maintenance = df
                 elif df_type == 'Payments':
                     st.session_state.payments = df
+                save_all_data()  # Save after applying
                 st.rerun()
         except Exception as e:
             st.error(f"Error: {str(e)}")
@@ -774,6 +853,7 @@ def delete_tenant(tenant_id):
     df = st.session_state.tenants
     df = df[df['ID'] != tenant_id]
     st.session_state.tenants = df.reset_index(drop=True)
+    save_all_data()  # Save after deletion
     st.success("✅ Tenant deleted successfully!")
     st.rerun()
 
@@ -781,6 +861,7 @@ def delete_property(prop_id):
     df = st.session_state.properties
     df = df[df['ID'] != prop_id]
     st.session_state.properties = df.reset_index(drop=True)
+    save_all_data()  # Save after deletion
     st.success("✅ Property deleted successfully!")
     st.rerun()
 
@@ -788,6 +869,7 @@ def delete_maintenance(maint_id):
     df = st.session_state.maintenance
     df = df[df['ID'] != maint_id]
     st.session_state.maintenance = df.reset_index(drop=True)
+    save_all_data()  # Save after deletion
     st.success("✅ Maintenance request deleted!")
     st.rerun()
 
@@ -795,6 +877,7 @@ def delete_payment(payment_id):
     df = st.session_state.payments
     df = df[df['ID'] != payment_id]
     st.session_state.payments = df.reset_index(drop=True)
+    save_all_data()  # Save after deletion
     st.success("✅ Payment deleted successfully!")
     st.rerun()
 
@@ -804,51 +887,56 @@ def show_email_report_section():
     st.markdown("### 📧 Email Reports")
     
     # Send full report
-    if st.button("📊 Send Full Report", use_container_width=True):
-        report_text = generate_full_report()
-        success, message = send_email_report(
-            EMAIL_RECIPIENT,
-            f"TenantHub Full Report - {datetime.now().strftime('%Y-%m-%d')}",
-            report_text
-        )
-        if success:
-            st.success("✅ Full report sent successfully!")
-        else:
-            st.error(f"❌ {message}")
+    if st.button("📊 Send Full Report", use_container_width=True, key="email_full_report"):
+        with st.spinner("Generating and sending report..."):
+            report_text = generate_full_report()
+            success, message = send_email_report(
+                EMAIL_RECIPIENT,
+                f"TenantHub Full Report - {datetime.now().strftime('%Y-%m-%d')}",
+                report_text
+            )
+            if success:
+                st.success("✅ Full report sent successfully!")
+            else:
+                st.error(f"❌ {message}")
     
     # Send tenant report
-    if st.button("👥 Send Tenant Report", use_container_width=True):
-        csv_buffer = generate_tenant_report()
-        if csv_buffer:
-            success, message = send_email_report(
-                EMAIL_RECIPIENT,
-                f"Tenant Report - {datetime.now().strftime('%Y-%m-%d')}",
-                "Please find attached the tenant report.",
-                csv_buffer
-            )
-            if success:
-                st.success("✅ Tenant report sent successfully!")
+    if st.button("👥 Send Tenant Report", use_container_width=True, key="email_tenant_report"):
+        with st.spinner("Generating and sending report..."):
+            csv_buffer = generate_tenant_report()
+            if csv_buffer:
+                success, message = send_email_report(
+                    EMAIL_RECIPIENT,
+                    f"Tenant Report - {datetime.now().strftime('%Y-%m-%d')}",
+                    "Please find attached the tenant report.",
+                    csv_buffer,
+                    "tenant_report.csv"
+                )
+                if success:
+                    st.success("✅ Tenant report sent successfully!")
+                else:
+                    st.error(f"❌ {message}")
             else:
-                st.error(f"❌ {message}")
-        else:
-            st.warning("No tenant data available")
+                st.warning("No tenant data available")
     
     # Send payment report
-    if st.button("💰 Send Payment Report", use_container_width=True):
-        csv_buffer = generate_payment_report()
-        if csv_buffer:
-            success, message = send_email_report(
-                EMAIL_RECIPIENT,
-                f"Payment Report - {datetime.now().strftime('%Y-%m-%d')}",
-                "Please find attached the payment report.",
-                csv_buffer
-            )
-            if success:
-                st.success("✅ Payment report sent successfully!")
+    if st.button("💰 Send Payment Report", use_container_width=True, key="email_payment_report"):
+        with st.spinner("Generating and sending report..."):
+            csv_buffer = generate_payment_report()
+            if csv_buffer:
+                success, message = send_email_report(
+                    EMAIL_RECIPIENT,
+                    f"Payment Report - {datetime.now().strftime('%Y-%m-%d')}",
+                    "Please find attached the payment report.",
+                    csv_buffer,
+                    "payment_report.csv"
+                )
+                if success:
+                    st.success("✅ Payment report sent successfully!")
+                else:
+                    st.error(f"❌ {message}")
             else:
-                st.error(f"❌ {message}")
-        else:
-            st.warning("No payment data available")
+                st.warning("No payment data available")
     
     # Individual tenant email
     if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
@@ -856,12 +944,13 @@ def show_email_report_section():
         tenant_names = st.session_state.tenants['Name'].tolist()
         selected_tenant = st.selectbox("Select Tenant", tenant_names, key="email_tenant_select")
         
-        if st.button("📧 Send Tenant Information", use_container_width=True):
-            success, message = send_tenant_info_email(selected_tenant, EMAIL_RECIPIENT)
-            if success:
-                st.success(f"✅ Tenant information sent successfully!")
-            else:
-                st.error(f"❌ {message}")
+        if st.button("📧 Send Tenant Information", use_container_width=True, key="email_tenant_info"):
+            with st.spinner("Sending tenant information..."):
+                success, message = send_tenant_info_email(selected_tenant, EMAIL_RECIPIENT)
+                if success:
+                    st.success(f"✅ Tenant information sent successfully!")
+                else:
+                    st.error(f"❌ {message}")
 
 # ==================== MAIN APP ====================
 def show_header():
@@ -875,6 +964,9 @@ def show_header():
             <div style="text-align: right;">
                 <div style="font-size: 0.9rem; opacity: 0.9;">👤 {st.session_state.get('username', 'Admin')}</div>
                 <div style="font-size: 0.8rem; opacity: 0.7;">{datetime.now().strftime('%B %d, %Y')}</div>
+                <div style="margin-top: 5px;">
+                    <span class="save-indicator">💾 Data Saved</span>
+                </div>
             </div>
         </div>
     </div>
@@ -1021,6 +1113,7 @@ def show_tenants():
                         })
                         st.session_state.payments = pd.concat([st.session_state.payments, new_payment], ignore_index=True)
                     
+                    save_all_data()  # Save after adding
                     st.success(f"✅ Tenant added with payment schedule! ({format_currency(rent)})")
                     st.rerun()
             
@@ -1119,6 +1212,7 @@ def show_tenants():
                                 df.loc[df['ID'] == row['ID'], 'Rent'] = new_rent
                                 df.loc[df['ID'] == row['ID'], 'Status'] = new_status
                                 st.session_state.tenants = df
+                                save_all_data()  # Save after edit
                                 st.success("✅ Tenant updated!")
                                 st.rerun()
                         
@@ -1166,6 +1260,7 @@ def show_properties():
                     'Occupancy': [occupancy]
                 })
                 st.session_state.properties = pd.concat([st.session_state.properties, new_property], ignore_index=True)
+                save_all_data()  # Save after adding
                 st.success("✅ Property added!")
                 st.rerun()
     
@@ -1218,6 +1313,7 @@ def show_properties():
                                 df.loc[df['ID'] == row['ID'], 'Units'] = new_units
                                 df.loc[df['ID'] == row['ID'], 'Occupancy'] = new_occupancy
                                 st.session_state.properties = df
+                                save_all_data()  # Save after edit
                                 st.success("✅ Property updated!")
                                 st.rerun()
                         
@@ -1266,6 +1362,7 @@ def show_maintenance():
                     'Tenant': [tenant]
                 })
                 st.session_state.maintenance = pd.concat([st.session_state.maintenance, new_issue], ignore_index=True)
+                save_all_data()  # Save after adding
                 st.success("✅ Issue reported!")
                 st.rerun()
     
@@ -1335,6 +1432,7 @@ def show_maintenance():
                                 df.loc[df['ID'] == row['ID'], 'Status'] = new_status
                                 df.loc[df['ID'] == row['ID'], 'Priority'] = new_priority
                                 st.session_state.maintenance = df
+                                save_all_data()  # Save after edit
                                 st.success("✅ Maintenance updated!")
                                 st.rerun()
                         
@@ -1384,6 +1482,7 @@ def show_payments():
                     'Status': [status]
                 })
                 st.session_state.payments = pd.concat([st.session_state.payments, new_payment], ignore_index=True)
+                save_all_data()  # Save after adding
                 st.success(f"✅ Payment recorded! ({format_currency(amount)})")
                 st.rerun()
     
@@ -1457,6 +1556,7 @@ def show_payments():
                                 df.loc[df['ID'] == row['ID'], 'Amount'] = new_amount
                                 df.loc[df['ID'] == row['ID'], 'Status'] = new_status
                                 st.session_state.payments = df
+                                save_all_data()  # Save after edit
                                 st.success("✅ Payment updated!")
                                 st.rerun()
                         
@@ -1508,16 +1608,24 @@ def show_sidebar():
         # Email Reports section in sidebar
         st.markdown("### 📧 Email Reports")
         if st.button("📊 Full Report", use_container_width=True, key="sidebar_full_report"):
-            report_text = generate_full_report()
-            success, message = send_email_report(
-                EMAIL_RECIPIENT,
-                f"TenantHub Full Report - {datetime.now().strftime('%Y-%m-%d')}",
-                report_text
-            )
-            if success:
-                st.success("✅ Report sent!")
-            else:
-                st.error(f"❌ {message}")
+            with st.spinner("Generating and sending report..."):
+                report_text = generate_full_report()
+                success, message = send_email_report(
+                    EMAIL_RECIPIENT,
+                    f"TenantHub Full Report - {datetime.now().strftime('%Y-%m-%d')}",
+                    report_text
+                )
+                if success:
+                    st.success("✅ Report sent!")
+                else:
+                    st.error(f"❌ {message}")
+        
+        st.markdown("---")
+        
+        # Save data button
+        if st.button("💾 Save Data Now", use_container_width=True, key="save_data_btn"):
+            save_all_data()
+            st.success("✅ Data saved successfully!")
         
         st.markdown("---")
         logout()
