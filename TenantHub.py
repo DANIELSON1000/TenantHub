@@ -552,7 +552,7 @@ def get_default_properties():
         'ID': [1, 2, 3, 4, 5],
         'Address': ['123 Main St', '456 Oak Ave', '789 Pine Rd', '321 Elm St', '654 Maple Dr'],
         'City': ['Springfield', 'Riverside', 'Lakewood', 'Springfield', 'Riverside'],
-        'Type': ['Apartment', 'Townhouse', 'Apartment', 'Duplex', 'Single Family'],
+        'Type': ['1 Room & Dining Room', '1 Room', '2 Room & Dining Room', '1 Room', '2 Room & Dining Room'],
         'Units': [12, 8, 16, 6, 4],
         'Occupancy': [10, 7, 15, 5, 4]
     })
@@ -1294,9 +1294,14 @@ def show_properties():
                 city = st.text_input("City", placeholder="Springfield", key="prop_city")
             
             with col_b:
-                prop_type = st.selectbox("Property Type", ["Apartment", "Townhouse", "Duplex", "Single Family", "Commercial"], key="prop_type")
-                units = st.number_input("Total Units", min_value=1, step=1, key="prop_units")
-                occupancy = st.number_input("Occupied Units", min_value=0, max_value=units, step=1, key="prop_occupancy")
+                # Updated property types - only the 3 specified
+                prop_type = st.selectbox(
+                    "Property Type", 
+                    ["1 Room & Dining Room", "1 Room", "2 Room & Dining Room"], 
+                    key="prop_type"
+                )
+                units = st.number_input("Total Units", min_value=1, step=1, value=1, key="prop_units")
+                occupancy = st.number_input("Occupied Units", min_value=0, max_value=units, step=1, value=0, key="prop_occupancy")
             
             if st.button("💾 Add Property", key="add_prop_btn"):
                 new_id = len(st.session_state.properties) + 1
@@ -1348,11 +1353,15 @@ def show_properties():
                             new_city = st.text_input("City", value=row['City'], key=f"edit_prop_city_{row['ID']}")
                         
                         with col_b:
-                            new_type = st.selectbox("Type", ["Apartment", "Townhouse", "Duplex", "Single Family", "Commercial"],
-                                                   index=["Apartment", "Townhouse", "Duplex", "Single Family", "Commercial"].index(row['Type']),
-                                                   key=f"edit_prop_type_{row['ID']}")
-                            new_units = st.number_input("Units", value=int(row['Units']), step=1, key=f"edit_prop_units_{row['ID']}")
-                            new_occupancy = st.number_input("Occupancy", value=int(row['Occupancy']), step=1, max_value=int(new_units),
+                            # Updated property types in edit as well
+                            new_type = st.selectbox(
+                                "Type", 
+                                ["1 Room & Dining Room", "1 Room", "2 Room & Dining Room"],
+                                index=["1 Room & Dining Room", "1 Room", "2 Room & Dining Room"].index(row['Type']) if row['Type'] in ["1 Room & Dining Room", "1 Room", "2 Room & Dining Room"] else 0,
+                                key=f"edit_prop_type_{row['ID']}"
+                            )
+                            new_units = st.number_input("Units", value=int(row['Units']), min_value=1, step=1, key=f"edit_prop_units_{row['ID']}")
+                            new_occupancy = st.number_input("Occupancy", value=int(row['Occupancy']), min_value=0, step=1, max_value=int(new_units),
                                                            key=f"edit_prop_occ_{row['ID']}")
                         
                         col_c, col_d = st.columns(2)
