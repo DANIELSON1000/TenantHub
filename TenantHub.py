@@ -71,6 +71,11 @@ def load_data_from_csv(filename, default_df):
                     df['Units'] = pd.to_numeric(df['Units'], errors='coerce').fillna(0).astype('int64')
                 if 'Occupancy' in df.columns:
                     df['Occupancy'] = pd.to_numeric(df['Occupancy'], errors='coerce').fillna(0).astype('int64')
+                # Convert string columns
+                string_columns = ['Name', 'Email', 'Phone', 'Property', 'Property_Type', 'Property_ID', 'Unit', 'Status', 'Move_In_Date', 'Address', 'City', 'Type', 'Issue', 'Priority', 'Reported', 'Tenant', 'Due_Date', 'Payment_Time']
+                for col in string_columns:
+                    if col in df.columns:
+                        df[col] = df[col].fillna('').astype(str)
                 return df
         return default_df.copy()
     except Exception as e:
@@ -523,9 +528,12 @@ def send_email_report_with_table(recipient_email, subject, html_content, csv_att
 
 def format_currency(amount):
     """Format amount in Rwandan Francs"""
-    if pd.isna(amount) or amount is None:
+    if pd.isna(amount) or amount is None or amount == '':
         amount = 0
-    return f"RWF {float(amount):,.0f}"
+    try:
+        return f"RWF {float(amount):,.0f}"
+    except:
+        return "RWF 0"
 
 def send_tenant_info_email(tenant_name, email):
     """Send tenant information via email with table format"""
@@ -1113,11 +1121,12 @@ def auto_generate_payments():
                 if existing_payment.empty:
                     next_due = generate_next_payment_date(tenant['Move_In_Date'])
                     if next_due:
+                        rent_value = float(tenant['Rent']) if pd.notna(tenant['Rent']) else 0.0
                         new_payment = pd.DataFrame({
                             'ID': [len(st.session_state.payments) + 1],
                             'Tenant': [tenant['Name']],
                             'Unit': [tenant['Unit']],
-                            'Amount': [float(tenant['Rent']) if pd.notna(tenant['Rent']) else 0.0],
+                            'Amount': [rent_value],
                             'Due_Date': [next_due],
                             'Status': ['Pending'],
                             'Payment_Time': ['']
@@ -1480,120 +1489,480 @@ def show_email_report_section():
                 else:
                     st.error(f"❌ {message}")
 
-# ==================== MAIN APP ====================
-def show_header():
-    st.markdown(f"""
-    <div class="main-header">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div>
-                <h1>🏠 TenantHub</h1>
-                <p>Property Management System - Rwanda</p>
-            </div>
-            <div style="text-align: right;">
-                <div style="font-size: 0.9rem; opacity: 0.9;">👤 {st.session_state.get('username', 'Admin')}</div>
-                <div style="font-size: 0.8rem; opacity: 0.7;">{datetime.now().strftime('%B %d, %Y')}</div>
-                <div style="margin-top: 5px;">
-                    <span class="save-indicator">💾 Data Saved</span>
-                </div>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-def show_metrics():
-    col1, col2, col3, col4 = st.columns(4)
+# ==================== SHOW PROPERTIES ====================
+def show_properties():
+    st.markdown('<div class="main-content">', unsafe_allow_html=True)
+    st.markdown('<h2 class="section-header">🏠 Property Management</h2>', unsafe_allow_html=True)
     
-    tenants_df = st.session_state.tenants
-    properties_df = st.session_state.properties
-    maintenance_df = st.session_state.maintenance
-    payments_df = st.session_state.payments
-    
-    total_tenants = len(tenants_df) if isinstance(tenants_df, pd.DataFrame) and not tenants_df.empty else 0
-    total_properties = len(properties_df) if isinstance(properties_df, pd.DataFrame) and not properties_df.empty else 0
-    total_revenue = tenants_df['Rent'].sum() if isinstance(tenants_df, pd.DataFrame) and not tenants_df.empty else 0
-    active_maintenance = len(maintenance_df[maintenance_df['Status'] != 'Completed']) if isinstance(maintenance_df, pd.DataFrame) and not maintenance_df.empty else 0
-    
-    overdue = 0
-    if isinstance(payments_df, pd.DataFrame) and not payments_df.empty:
-        today = datetime.now().date()
-        for _, row in payments_df.iterrows():
-            if row['Status'] != 'Paid':
-                try:
-                    due_date = datetime.strptime(row['Due_Date'], '%Y-%m-%d').date()
-                    if due_date < today:
-                        overdue += 1
-                except:
-                    continue
+    col1, col2 = st.columns([3, 1])
     
     with col1:
-        st.markdown(f"""
-        <div class="dashboard-card green">
-            <div class="metric-label">👥 Total Tenants</div>
-            <div class="metric-value">{total_tenants}</div>
-            <div style="font-size: 0.85rem; color: #555;">Active: {len(tenants_df[tenants_df['Status'] == 'Active']) if isinstance(tenants_df, pd.DataFrame) and not tenants_df.empty else 0}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        with st.expander("➕ Add New Property", expanded=False):
+            col_a, col_b = st.columns(2)
+            
+            with col_a:
+                address = st.text_input("Address", placeholder="123 Main St", key="prop_address")
+                city = st.text_input("City", placeholder="Springfield", key="prop_city")
+            
+            with col_b:
+                prop_type = st.selectbox(
+                    "Property Type", 
+                    ["1 Room & Dining Room", "1 Room", "2 Room & Dining Room"], 
+                    key="prop_type"
+                )
+                units = st.number_input("Total Units", min_value=1, step=1, value=1, key="prop_units")
+                st.info("Occupancy will be automatically calculated based on assigned tenants.")
+            
+            if st.button("💾 Add Property", key="add_prop_btn"):
+                if address and city:
+                    new_id = len(st.session_state.properties) + 1
+                    new_property = pd.DataFrame({
+                        'ID': [new_id],
+                        'Address': [address],
+                        'City': [city],
+                        'Type': [prop_type],
+                        'Units': [units],
+                        'Occupancy': [0]
+                    })
+                    st.session_state.properties = pd.concat([st.session_state.properties, new_property], ignore_index=True)
+                    save_all_data()
+                    st.success("✅ Property added! You can now add tenants to this property.")
+                    st.rerun()
+                else:
+                    st.warning("Please fill in all required fields!")
     
     with col2:
-        st.markdown(f"""
-        <div class="dashboard-card orange">
-            <div class="metric-label">🏠 Properties</div>
-            <div class="metric-value">{total_properties}</div>
-            <div style="font-size: 0.85rem; color: #555;">Total Units: {properties_df['Units'].sum() if isinstance(properties_df, pd.DataFrame) and not properties_df.empty else 0}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        with st.expander("📊 Data Management", expanded=False):
+            download_csv(st.session_state.properties, 'properties.csv')
+            upload_csv('Properties')
+        if st.button("🔄 Update Occupancy", use_container_width=True, key="update_occupancy"):
+            with st.spinner("Updating occupancy..."):
+                update_all_occupancy()
+                st.success("✅ Occupancy updated!")
     
-    with col3:
-        st.markdown(f"""
-        <div class="dashboard-card purple">
-            <div class="metric-label">💰 Monthly Revenue</div>
-            <div class="metric-value">{format_currency(total_revenue)}</div>
-            <div style="font-size: 0.85rem; color: #555;">From {total_tenants} tenants</div>
-        </div>
-        """, unsafe_allow_html=True)
+    if isinstance(st.session_state.properties, pd.DataFrame) and not st.session_state.properties.empty:
+        update_all_occupancy()
+        
+        for idx, row in st.session_state.properties.iterrows():
+            col1, col2, col3, col4, col5 = st.columns([2, 1.5, 1, 1, 1])
+            
+            with col1:
+                st.markdown(f"**{row['Address']}**")
+                st.caption(row['City'])
+            
+            with col2:
+                st.write(f"Type: {row['Type']}")
+                st.write(f"Units: {row['Units']} ({row['Occupancy']} occupied)")
+                available = row['Units'] - row['Occupancy']
+                st.write(f"Available: {available}")
+            
+            with col3:
+                try:
+                    occupancy_pct = int((row['Occupancy'] / row['Units']) * 100) if row['Units'] > 0 else 0
+                    st.progress(occupancy_pct / 100)
+                    st.caption(f"{occupancy_pct}% occupied")
+                except:
+                    st.caption("N/A")
+            
+            with col4:
+                if st.button(f"✏️ Edit", key=f"edit_prop_{row['ID']}_{idx}", use_container_width=True):
+                    st.session_state[f"editing_prop_{row['ID']}"] = True
+            
+            with col5:
+                if st.button(f"🗑️ Delete", key=f"del_prop_{row['ID']}_{idx}", use_container_width=True):
+                    has_tenants = False
+                    if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
+                        if 'Property' in st.session_state.tenants.columns:
+                            has_tenants = len(st.session_state.tenants[st.session_state.tenants['Property'].str.lower() == row['Address'].lower()]) > 0
+                    
+                    if has_tenants:
+                        st.error("❌ Cannot delete property with assigned tenants! Please remove tenants first.")
+                    else:
+                        delete_property(row['ID'])
+            
+            # Check if this property is being edited
+            if st.session_state.get(f"editing_prop_{row['ID']}", False):
+                st.markdown('<div class="edit-form">', unsafe_allow_html=True)
+                st.markdown(f"### ✏️ Editing: {row['Address']}")
+                
+                col_a, col_b = st.columns(2)
+                
+                with col_a:
+                    new_address = st.text_input("Address", value=row['Address'], key=f"edit_prop_addr_{row['ID']}")
+                    new_city = st.text_input("City", value=row['City'], key=f"edit_prop_city_{row['ID']}")
+                
+                with col_b:
+                    new_type = st.selectbox(
+                        "Type", 
+                        ["1 Room & Dining Room", "1 Room", "2 Room & Dining Room"],
+                        index=["1 Room & Dining Room", "1 Room", "2 Room & Dining Room"].index(row['Type']) if row['Type'] in ["1 Room & Dining Room", "1 Room", "2 Room & Dining Room"] else 0,
+                        key=f"edit_prop_type_{row['ID']}"
+                    )
+                    new_units = st.number_input("Total Units", value=int(row['Units']), min_value=1, step=1, key=f"edit_prop_units_{row['ID']}")
+                    st.info("Occupancy is automatically calculated based on assigned tenants.")
+                
+                col_c, col_d = st.columns(2)
+                with col_c:
+                    if st.button("💾 Save", key=f"save_prop_{row['ID']}", use_container_width=True):
+                        try:
+                            df = st.session_state.properties.copy()
+                            df.loc[df['ID'] == row['ID'], 'Address'] = str(new_address)
+                            df.loc[df['ID'] == row['ID'], 'City'] = str(new_city)
+                            df.loc[df['ID'] == row['ID'], 'Type'] = str(new_type)
+                            df.loc[df['ID'] == row['ID'], 'Units'] = int(new_units)
+                            st.session_state.properties = df
+                            update_all_occupancy()
+                            save_all_data()
+                            st.session_state[f"editing_prop_{row['ID']}"] = False
+                            st.success("✅ Property updated!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error saving: {str(e)}")
+                
+                with col_d:
+                    if st.button("❌ Cancel", key=f"cancel_edit_prop_{row['ID']}", use_container_width=True):
+                        st.session_state[f"editing_prop_{row['ID']}"] = False
+                        st.rerun()
+                
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.markdown("---")
+    else:
+        st.info("No properties added yet. Add a property to get started!")
     
-    with col4:
-        st.markdown(f"""
-        <div class="dashboard-card red">
-            <div class="metric-label">⚠️ Overdue Payments</div>
-            <div class="metric-value">{overdue}</div>
-            <div style="font-size: 0.85rem; color: #555;">Need attention</div>
-        </div>
-        """, unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-def show_reminders():
-    """Show payment reminders"""
-    reminders = check_payment_reminders()
-    if reminders:
-        st.markdown("### 🔔 Payment Reminders")
-        for reminder in reminders:
-            if reminder.get('overdue', False):
-                st.markdown(f"""
-                <div class="reminder-card urgent">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <div>
-                            <strong>⚠️ OVERDUE</strong> - {reminder['tenant']} (Unit {reminder['unit']})
-                            <br>Amount: {format_currency(reminder['amount'])} - Due: {reminder['due_date']}
-                            <br><span style="color: #E74C3C;">Payment is {abs(reminder['days'])} days overdue!</span>
-                        </div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                urgency = "urgent" if reminder['urgent'] else ""
-                st.markdown(f"""
-                <div class="reminder-card {urgency}">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <div>
-                            <strong>⏰ Payment Due Soon</strong> - {reminder['tenant']} (Unit {reminder['unit']})
-                            <br>Amount: {format_currency(reminder['amount'])} - Due: {reminder['due_date']}
-                            <br>⏳ {reminder['days']} days remaining
-                        </div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-        st.markdown("---")
+# ==================== SHOW MAINTENANCE ====================
+def show_maintenance():
+    st.markdown('<div class="main-content">', unsafe_allow_html=True)
+    st.markdown('<h2 class="section-header">🔧 Maintenance Management</h2>', unsafe_allow_html=True)
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        with st.expander("➕ Report New Issue", expanded=False):
+            col_a, col_b = st.columns(2)
+            
+            with col_a:
+                if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
+                    unit_options = st.session_state.tenants['Unit'].tolist()
+                    unit = st.selectbox("Unit Number", unit_options, key="maint_unit")
+                    tenant_data = st.session_state.tenants[st.session_state.tenants['Unit'] == unit]
+                    tenant_name = tenant_data.iloc[0]['Name'] if not tenant_data.empty else ""
+                else:
+                    unit = st.text_input("Unit Number", placeholder="3B", key="maint_unit")
+                    tenant_name = ""
+                
+                tenant = st.text_input("Tenant Name", value=tenant_name, key="maint_tenant")
+                issue = st.text_area("Issue Description", placeholder="Describe the issue...", key="maint_issue")
+            
+            with col_b:
+                priority = st.selectbox("Priority", ["High", "Medium", "Low"], key="maint_priority")
+                status = st.selectbox("Status", ["New", "Active", "In Progress", "Completed"], key="maint_status")
+            
+            if st.button("💾 Report Issue", key="add_maint_btn"):
+                if unit and tenant and issue:
+                    new_id = f"M-{len(st.session_state.maintenance) + 1:03d}"
+                    new_issue = pd.DataFrame({
+                        'ID': [new_id],
+                        'Unit': [unit],
+                        'Issue': [issue],
+                        'Status': [status],
+                        'Priority': [priority],
+                        'Reported': [datetime.now().strftime('%Y-%m-%d')],
+                        'Tenant': [tenant]
+                    })
+                    st.session_state.maintenance = pd.concat([st.session_state.maintenance, new_issue], ignore_index=True)
+                    save_all_data()
+                    st.success("✅ Issue reported!")
+                    st.rerun()
+                else:
+                    st.warning("Please fill in all required fields!")
+    
+    with col2:
+        with st.expander("📊 Data Management", expanded=False):
+            download_csv(st.session_state.maintenance, 'maintenance.csv')
+            upload_csv('Maintenance')
+    
+    if isinstance(st.session_state.maintenance, pd.DataFrame) and not st.session_state.maintenance.empty:
+        priority_filter = st.selectbox("Filter by priority", ["All", "High", "Medium", "Low"], key="maint_filter")
+        
+        filtered_df = st.session_state.maintenance.copy()
+        if priority_filter != "All":
+            filtered_df = filtered_df[filtered_df['Priority'] == priority_filter]
+        
+        for idx, row in filtered_df.iterrows():
+            col1, col2, col3, col4, col5 = st.columns([2, 1.5, 1, 1, 1])
+            
+            with col1:
+                st.markdown(f"**#{row['ID']}**")
+                st.write(row['Issue'][:50] + "..." if len(row['Issue']) > 50 else row['Issue'])
+            
+            with col2:
+                st.write(f"Unit: {row['Unit']}")
+                st.write(f"Tenant: {row['Tenant']}")
+                st.caption(f"Reported: {row['Reported']}")
+            
+            with col3:
+                priority_color = {
+                    "High": "🔴",
+                    "Medium": "🟡",
+                    "Low": "🟢"
+                }.get(row['Priority'], "⚪")
+                st.write(f"{priority_color} {row['Priority']}")
+                status_class = {
+                    "Active": "status-active",
+                    "New": "status-new",
+                    "In Progress": "status-inprogress",
+                    "Completed": "status-completed"
+                }.get(row['Status'], "status-active")
+                st.markdown(f'<span class="status-badge {status_class}">{row["Status"]}</span>', unsafe_allow_html=True)
+            
+            with col4:
+                if st.button(f"✏️ Edit", key=f"edit_maint_{row['ID']}_{idx}", use_container_width=True):
+                    st.session_state[f"editing_maint_{row['ID']}"] = True
+            
+            with col5:
+                if st.button(f"🗑️ Delete", key=f"del_maint_{row['ID']}_{idx}", use_container_width=True):
+                    delete_maintenance(row['ID'])
+            
+            # Check if this maintenance is being edited
+            if st.session_state.get(f"editing_maint_{row['ID']}", False):
+                st.markdown('<div class="edit-form">', unsafe_allow_html=True)
+                st.markdown(f"### ✏️ Editing: #{row['ID']}")
+                
+                col_a, col_b = st.columns(2)
+                
+                with col_a:
+                    new_unit = st.text_input("Unit", value=row['Unit'], key=f"edit_maint_unit_{row['ID']}")
+                    new_tenant = st.text_input("Tenant", value=row['Tenant'], key=f"edit_maint_tenant_{row['ID']}")
+                    new_issue = st.text_area("Issue", value=row['Issue'], key=f"edit_maint_issue_{row['ID']}")
+                
+                with col_b:
+                    new_status = st.selectbox("Status", ["New", "Active", "In Progress", "Completed"],
+                                             index=["New", "Active", "In Progress", "Completed"].index(row['Status']) if row['Status'] in ["New", "Active", "In Progress", "Completed"] else 0,
+                                             key=f"edit_maint_status_{row['ID']}")
+                    new_priority = st.selectbox("Priority", ["High", "Medium", "Low"],
+                                               index=["High", "Medium", "Low"].index(row['Priority']) if row['Priority'] in ["High", "Medium", "Low"] else 0,
+                                               key=f"edit_maint_priority_{row['ID']}")
+                
+                col_c, col_d = st.columns(2)
+                with col_c:
+                    if st.button("💾 Save", key=f"save_maint_{row['ID']}", use_container_width=True):
+                        try:
+                            df = st.session_state.maintenance.copy()
+                            df.loc[df['ID'] == row['ID'], 'Unit'] = str(new_unit)
+                            df.loc[df['ID'] == row['ID'], 'Tenant'] = str(new_tenant)
+                            df.loc[df['ID'] == row['ID'], 'Issue'] = str(new_issue)
+                            df.loc[df['ID'] == row['ID'], 'Status'] = str(new_status)
+                            df.loc[df['ID'] == row['ID'], 'Priority'] = str(new_priority)
+                            st.session_state.maintenance = df
+                            save_all_data()
+                            st.session_state[f"editing_maint_{row['ID']}"] = False
+                            st.success("✅ Maintenance updated!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error saving: {str(e)}")
+                
+                with col_d:
+                    if st.button("❌ Cancel", key=f"cancel_maint_{row['ID']}", use_container_width=True):
+                        st.session_state[f"editing_maint_{row['ID']}"] = False
+                        st.rerun()
+                
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.markdown("---")
+    else:
+        st.info("No maintenance issues reported yet.")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
+# ==================== SHOW PAYMENTS ====================
+def show_payments():
+    st.markdown('<div class="main-content">', unsafe_allow_html=True)
+    st.markdown('<h2 class="section-header">💰 Payment Management</h2>', unsafe_allow_html=True)
+    
+    show_reminders()
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        if st.button("🔄 Generate Payments for This Month", use_container_width=True, key="auto_gen_payments_btn"):
+            with st.spinner("Generating payments..."):
+                auto_generate_payments()
+        
+        with st.expander("➕ Record Payment Manually", expanded=False):
+            col_a, col_b = st.columns(2)
+            
+            with col_a:
+                if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
+                    tenant_options = st.session_state.tenants['Name'].tolist()
+                    selected_tenant = st.selectbox("Select Tenant", tenant_options, key="payment_tenant_select")
+                    
+                    tenant_data = st.session_state.tenants[st.session_state.tenants['Name'] == selected_tenant]
+                    if not tenant_data.empty:
+                        unit = tenant_data.iloc[0]['Unit']
+                        rent = tenant_data.iloc[0]['Rent']
+                    else:
+                        unit = ""
+                        rent = 0
+                else:
+                    selected_tenant = st.text_input("Tenant Name", placeholder="John Smith", key="payment_tenant")
+                    unit = st.text_input("Unit Number", placeholder="3B", key="payment_unit")
+                    rent = 0
+                
+                amount = st.number_input("Amount (RWF)", value=float(rent) if rent > 0 else 0.0, min_value=0.0, step=5000.0, key="payment_amount")
+            
+            with col_b:
+                payment_date = st.date_input("Payment Date", datetime.now(), key="payment_date")
+                status = st.selectbox("Status", ["Paid", "Pending", "Overdue"], key="payment_status")
+                if status == "Paid":
+                    payment_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                else:
+                    payment_time = ""
+            
+            if st.button("💾 Record Payment", key="add_payment_btn"):
+                if selected_tenant and unit and amount > 0:
+                    new_id = len(st.session_state.payments) + 1
+                    new_payment = pd.DataFrame({
+                        'ID': [new_id],
+                        'Tenant': [selected_tenant],
+                        'Unit': [unit],
+                        'Amount': [float(amount) if amount > 0 else 0.0],
+                        'Due_Date': [payment_date.strftime('%Y-%m-%d')],
+                        'Status': [status],
+                        'Payment_Time': [payment_time if status == "Paid" else ""]
+                    })
+                    st.session_state.payments = pd.concat([st.session_state.payments, new_payment], ignore_index=True)
+                    save_all_data()
+                    if status == "Paid":
+                        st.success(f"✅ Payment recorded! Paid on: {payment_time} ({format_currency(amount)})")
+                    else:
+                        st.success(f"✅ Payment recorded! ({format_currency(amount)})")
+                    st.rerun()
+                else:
+                    st.warning("Please fill in all required fields!")
+    
+    with col2:
+        with st.expander("📊 Data Management", expanded=False):
+            download_csv(st.session_state.payments, 'payments.csv')
+            upload_csv('Payments')
+        with st.expander("📧 Email Reports", expanded=False):
+            show_email_report_section()
+    
+    if isinstance(st.session_state.payments, pd.DataFrame) and not st.session_state.payments.empty:
+        total_collected = st.session_state.payments[st.session_state.payments['Status'] == 'Paid']['Amount'].sum()
+        total_pending = st.session_state.payments[st.session_state.payments['Status'] == 'Pending']['Amount'].sum()
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("💰 Total Collected", format_currency(total_collected))
+        with col2:
+            st.metric("⏳ Pending", format_currency(total_pending))
+        with col3:
+            st.metric("📊 Total Records", len(st.session_state.payments))
+        
+        filter_status = st.selectbox("Filter by status", ["All", "Paid", "Pending", "Overdue"], key="payment_filter")
+        
+        filtered_df = st.session_state.payments.copy()
+        if filter_status != "All":
+            filtered_df = filtered_df[filtered_df['Status'] == filter_status]
+        
+        filtered_df = filtered_df.sort_values('Due_Date', ascending=False)
+        
+        for idx, row in filtered_df.iterrows():
+            col1, col2, col3, col4, col5, col6 = st.columns([1.5, 1, 1.2, 1.2, 0.8, 0.8])
+            
+            with col1:
+                st.markdown(f"**{row['Tenant']}**")
+                st.caption(f"Unit {row['Unit']}")
+            
+            with col2:
+                st.write(format_currency(row['Amount']))
+            
+            with col3:
+                st.caption(f"Due: {row['Due_Date']}")
+                if row['Status'] == 'Paid' and row.get('Payment_Time'):
+                    st.caption(f"✅ Paid: {row['Payment_Time']}")
+            
+            with col4:
+                status_class = {
+                    "Paid": "status-paid",
+                    "Pending": "status-pending",
+                    "Overdue": "status-overdue"
+                }.get(row['Status'], "status-active")
+                st.markdown(f'<span class="status-badge {status_class}">{row["Status"]}</span>', unsafe_allow_html=True)
+                
+                if row['Status'] != 'Paid':
+                    if st.button(f"✅ Mark Paid", key=f"mark_paid_{row['ID']}_{idx}", use_container_width=True):
+                        if mark_payment_as_paid(row['ID']):
+                            st.success(f"✅ Payment marked as paid on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}!")
+                            st.rerun()
+                        else:
+                            st.error("❌ Failed to mark payment as paid.")
+            
+            with col5:
+                if st.button(f"✏️ Edit", key=f"edit_payment_{row['ID']}_{idx}", use_container_width=True):
+                    st.session_state[f"editing_payment_{row['ID']}"] = True
+            
+            with col6:
+                if st.button(f"🗑️ Delete", key=f"del_payment_{row['ID']}_{idx}", use_container_width=True):
+                    delete_payment(row['ID'])
+            
+            # Check if this payment is being edited
+            if st.session_state.get(f"editing_payment_{row['ID']}", False):
+                st.markdown('<div class="edit-form">', unsafe_allow_html=True)
+                st.markdown(f"### ✏️ Editing Payment: {row['Tenant']}")
+                
+                col_a, col_b = st.columns(2)
+                
+                with col_a:
+                    new_tenant = st.text_input("Tenant", value=row['Tenant'], key=f"edit_pay_tenant_{row['ID']}")
+                    new_unit = st.text_input("Unit", value=row['Unit'], key=f"edit_pay_unit_{row['ID']}")
+                
+                with col_b:
+                    new_amount = st.number_input("Amount (RWF)", value=float(row['Amount']) if pd.notna(row['Amount']) else 0.0, step=5000.0, key=f"edit_pay_amount_{row['ID']}")
+                    new_status = st.selectbox("Status", ["Paid", "Pending", "Overdue"],
+                                             index=["Paid", "Pending", "Overdue"].index(row['Status']) if row['Status'] in ["Paid", "Pending", "Overdue"] else 0,
+                                             key=f"edit_pay_status_{row['ID']}")
+                    if new_status == "Paid" and row['Status'] != "Paid":
+                        new_payment_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    else:
+                        new_payment_time = row.get('Payment_Time', '')
+                
+                col_c, col_d = st.columns(2)
+                with col_c:
+                    if st.button("💾 Save", key=f"save_payment_{row['ID']}", use_container_width=True):
+                        try:
+                            df = st.session_state.payments.copy()
+                            df.loc[df['ID'] == row['ID'], 'Tenant'] = str(new_tenant)
+                            df.loc[df['ID'] == row['ID'], 'Unit'] = str(new_unit)
+                            df.loc[df['ID'] == row['ID'], 'Amount'] = float(new_amount) if new_amount > 0 else 0.0
+                            df.loc[df['ID'] == row['ID'], 'Status'] = str(new_status)
+                            if new_status == "Paid":
+                                df.loc[df['ID'] == row['ID'], 'Payment_Time'] = str(new_payment_time)
+                            st.session_state.payments = df
+                            save_all_data()
+                            st.session_state[f"editing_payment_{row['ID']}"] = False
+                            st.success("✅ Payment updated!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error updating payment: {str(e)}")
+                
+                with col_d:
+                    if st.button("❌ Cancel", key=f"cancel_edit_payment_{row['ID']}", use_container_width=True):
+                        st.session_state[f"editing_payment_{row['ID']}"] = False
+                        st.rerun()
+                
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.markdown("---")
+    else:
+        st.info("No payments recorded yet.")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ==================== SHOW TENANTS ====================
 def show_tenants():
     st.markdown('<div class="main-content">', unsafe_allow_html=True)
     st.markdown('<h2 class="section-header">👥 Tenant Management</h2>', unsafe_allow_html=True)
@@ -1816,7 +2185,7 @@ def show_tenants():
                 if st.button(f"🗑️ Delete", key=f"del_tenant_{row['ID']}_{idx}", use_container_width=True):
                     delete_tenant(row['ID'])
             
-            # Check if this tenant is being edited - show wide form with dropdowns
+            # Check if this tenant is being edited
             if st.session_state.get(f"editing_tenant_{row['ID']}", False):
                 st.markdown('<div class="edit-form">', unsafe_allow_html=True)
                 st.markdown(f"### ✏️ Editing: {row['Name']}")
@@ -1858,7 +2227,6 @@ def show_tenants():
                         
                         # Parse selected property
                         if selected_prop:
-                            # Extract property name and type
                             if " (" in selected_prop and ")" in selected_prop:
                                 parts = selected_prop.split(" (")
                                 new_property = parts[0]
@@ -1949,10 +2317,6 @@ def show_tenants():
         st.info("No tenants added yet. Please add a property first, then add tenants.")
     
     st.markdown('</div>', unsafe_allow_html=True)
-
-# ==================== PROPERTIES, MAINTENANCE, PAYMENTS FUNCTIONS ====================
-# (Keep the same show_properties, show_maintenance, show_payments functions as before)
-# For brevity, I'll show only the show_tenants function which had the main issue
 
 # ==================== SIDEBAR ====================
 def show_sidebar():
