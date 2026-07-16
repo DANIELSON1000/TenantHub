@@ -13,6 +13,7 @@ from email.mime.base import MIMEBase
 from email import encoders
 import re
 import pickle
+import numpy as np
 
 # Try to import reportlab, fallback to simple text if not available
 try:
@@ -55,10 +56,15 @@ def load_data_from_csv(filename, default_df):
         if os.path.exists(filepath):
             df = pd.read_csv(filepath)
             if not df.empty:
-                # Ensure all columns exist and have correct types
+                # Ensure all columns exist
                 for col in default_df.columns:
                     if col not in df.columns:
                         df[col] = ''
+                # Fix data types
+                if 'ID' in df.columns:
+                    df['ID'] = df['ID'].astype('int64')
+                if 'Rent' in df.columns:
+                    df['Rent'] = pd.to_numeric(df['Rent'], errors='coerce').fillna(0)
                 return df
         return default_df.copy()
     except Exception as e:
@@ -116,9 +122,9 @@ def load_all_data():
                 st.session_state.tenants['Property_Type'] = ''
             if 'Property_ID' not in st.session_state.tenants.columns:
                 st.session_state.tenants['Property_ID'] = ''
-            # Convert ID to int if needed
-            if st.session_state.tenants['ID'].dtype != 'int64':
-                st.session_state.tenants['ID'] = st.session_state.tenants['ID'].astype('int64')
+            # Fix Rent data type
+            if 'Rent' in st.session_state.tenants.columns:
+                st.session_state.tenants['Rent'] = pd.to_numeric(st.session_state.tenants['Rent'], errors='coerce').fillna(0)
         
         update_all_occupancy()
         
@@ -1687,7 +1693,7 @@ def show_tenants():
                             'Property_ID': [property_id],
                             'Unit': [unit],
                             'Status': [status],
-                            'Rent': [rent],
+                            'Rent': [float(rent)],
                             'Move_In_Date': [move_in_date.strftime('%Y-%m-%d')]
                         })
                         st.session_state.tenants = pd.concat([st.session_state.tenants, new_tenant], ignore_index=True)
@@ -1702,7 +1708,7 @@ def show_tenants():
                                 'ID': [len(st.session_state.payments) + 1],
                                 'Tenant': [name],
                                 'Unit': [unit],
-                                'Amount': [rent],
+                                'Amount': [float(rent)],
                                 'Due_Date': [next_due],
                                 'Status': ['Pending'],
                                 'Payment_Time': ['']
@@ -1866,9 +1872,9 @@ def show_tenants():
                 col_c, col_d = st.columns(2)
                 
                 with col_c:
-                    new_rent = st.number_input("Rent (RWF)", value=float(row['Rent']), step=5000.0, key=f"edit_rent_{row['ID']}")
+                    new_rent = st.number_input("Rent (RWF)", value=float(row['Rent']) if pd.notna(row['Rent']) else 0.0, step=5000.0, key=f"edit_rent_{row['ID']}")
                     new_status = st.selectbox("Status", ["Active", "Pending", "In Progress", "New"], 
-                                             index=["Active", "Pending", "In Progress", "New"].index(row['Status']),
+                                             index=["Active", "Pending", "In Progress", "New"].index(row['Status']) if row['Status'] in ["Active", "Pending", "In Progress", "New"] else 0,
                                              key=f"edit_status_{row['ID']}")
                 
                 with col_d:
@@ -1890,14 +1896,15 @@ def show_tenants():
                             # Create a copy of the dataframe
                             df = st.session_state.tenants.copy()
                             
-                            # Update values using loc
+                            # Update values with proper type conversion
                             df.loc[df['ID'] == row['ID'], 'Name'] = str(new_name)
                             df.loc[df['ID'] == row['ID'], 'Email'] = str(new_email)
                             df.loc[df['ID'] == row['ID'], 'Phone'] = str(new_phone)
                             df.loc[df['ID'] == row['ID'], 'Property'] = str(new_property)
                             df.loc[df['ID'] == row['ID'], 'Property_Type'] = str(new_property_type)
                             df.loc[df['ID'] == row['ID'], 'Unit'] = str(new_unit)
-                            df.loc[df['ID'] == row['ID'], 'Rent'] = float(new_rent)
+                            # Ensure rent is float
+                            df.loc[df['ID'] == row['ID'], 'Rent'] = float(new_rent) if new_rent > 0 else 0.0
                             df.loc[df['ID'] == row['ID'], 'Status'] = str(new_status)
                             df.loc[df['ID'] == row['ID'], 'Move_In_Date'] = new_move_in.strftime('%Y-%m-%d')
                             
@@ -2178,10 +2185,10 @@ def show_maintenance():
                 
                 with col_b:
                     new_status = st.selectbox("Status", ["New", "Active", "In Progress", "Completed"],
-                                             index=["New", "Active", "In Progress", "Completed"].index(row['Status']),
+                                             index=["New", "Active", "In Progress", "Completed"].index(row['Status']) if row['Status'] in ["New", "Active", "In Progress", "Completed"] else 0,
                                              key=f"edit_maint_status_{row['ID']}")
                     new_priority = st.selectbox("Priority", ["High", "Medium", "Low"],
-                                               index=["High", "Medium", "Low"].index(row['Priority']),
+                                               index=["High", "Medium", "Low"].index(row['Priority']) if row['Priority'] in ["High", "Medium", "Low"] else 0,
                                                key=f"edit_maint_priority_{row['ID']}")
                 
                 col_c, col_d = st.columns(2)
@@ -2265,7 +2272,7 @@ def show_payments():
                         'ID': [new_id],
                         'Tenant': [selected_tenant],
                         'Unit': [unit],
-                        'Amount': [amount],
+                        'Amount': [float(amount)],
                         'Due_Date': [payment_date.strftime('%Y-%m-%d')],
                         'Status': [status],
                         'Payment_Time': [payment_time if status == "Paid" else ""]
@@ -2358,9 +2365,9 @@ def show_payments():
                     new_unit = st.text_input("Unit", value=row['Unit'], key=f"edit_pay_unit_{row['ID']}")
                 
                 with col_b:
-                    new_amount = st.number_input("Amount (RWF)", value=float(row['Amount']), step=5000.0, key=f"edit_pay_amount_{row['ID']}")
+                    new_amount = st.number_input("Amount (RWF)", value=float(row['Amount']) if pd.notna(row['Amount']) else 0.0, step=5000.0, key=f"edit_pay_amount_{row['ID']}")
                     new_status = st.selectbox("Status", ["Paid", "Pending", "Overdue"],
-                                             index=["Paid", "Pending", "Overdue"].index(row['Status']),
+                                             index=["Paid", "Pending", "Overdue"].index(row['Status']) if row['Status'] in ["Paid", "Pending", "Overdue"] else 0,
                                              key=f"edit_pay_status_{row['ID']}")
                     if new_status == "Paid" and row['Status'] != "Paid":
                         new_payment_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -2374,7 +2381,7 @@ def show_payments():
                             df = st.session_state.payments.copy()
                             df.loc[df['ID'] == row['ID'], 'Tenant'] = str(new_tenant)
                             df.loc[df['ID'] == row['ID'], 'Unit'] = str(new_unit)
-                            df.loc[df['ID'] == row['ID'], 'Amount'] = float(new_amount)
+                            df.loc[df['ID'] == row['ID'], 'Amount'] = float(new_amount) if new_amount > 0 else 0.0
                             df.loc[df['ID'] == row['ID'], 'Status'] = str(new_status)
                             if new_status == "Paid":
                                 df.loc[df['ID'] == row['ID'], 'Payment_Time'] = str(new_payment_time)
