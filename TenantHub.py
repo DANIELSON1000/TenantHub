@@ -1542,7 +1542,7 @@ def show_tenants():
                 phone = st.text_input("Phone", placeholder="(555) 123-4567", key="tenant_phone")
             
             with col_b:
-                # Property selection with type
+                # Property selection with type - FIXED
                 available_props = get_available_properties()
                 if available_props:
                     # Create display options with property type
@@ -1576,7 +1576,7 @@ def show_tenants():
                             max_units = property_data.iloc[0]['Units']
                             unit_options = [f"Unit {i+1}" for i in range(max_units)]
                             
-                            # Get occupied units
+                            # Get occupied units - case insensitive
                             if 'Property' in st.session_state.tenants.columns:
                                 occupied_units = st.session_state.tenants[
                                     (st.session_state.tenants['Property'].str.lower() == property_name.lower()) & 
