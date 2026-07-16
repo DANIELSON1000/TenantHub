@@ -2004,6 +2004,9 @@ def show_payments():
         filtered_df = filtered_df.sort_values('Due_Date', ascending=False)
         
         for idx, row in filtered_df.iterrows():
+            # Use a unique key combining row ID and a random timestamp
+            unique_key = f"{row['ID']}_{idx}_{datetime.now().timestamp()}"
+            
             col1, col2, col3, col4, col5, col6 = st.columns([1.5, 1, 1.2, 1.2, 0.8, 0.8])
             
             with col1:
@@ -2050,14 +2053,14 @@ def show_payments():
                 col_a, col_b = st.columns(2)
                 
                 with col_a:
-                    new_tenant = st.text_input("Tenant", value=row['Tenant'], key=f"edit_pay_tenant_{row['ID']}")
-                    new_unit = st.text_input("Unit", value=row['Unit'], key=f"edit_pay_unit_{row['ID']}")
+                    new_tenant = st.text_input("Tenant", value=row['Tenant'], key=f"edit_pay_tenant_{row['ID']}_{idx}")
+                    new_unit = st.text_input("Unit", value=row['Unit'], key=f"edit_pay_unit_{row['ID']}_{idx}")
                 
                 with col_b:
-                    new_amount = st.number_input("Amount (RWF)", value=float(row['Amount']) if pd.notna(row['Amount']) else 0.0, step=5000.0, key=f"edit_pay_amount_{row['ID']}")
+                    new_amount = st.number_input("Amount (RWF)", value=float(row['Amount']) if pd.notna(row['Amount']) else 0.0, step=5000.0, key=f"edit_pay_amount_{row['ID']}_{idx}")
                     new_status = st.selectbox("Status", ["Paid", "Pending", "Overdue"],
                                              index=["Paid", "Pending", "Overdue"].index(row['Status']) if row['Status'] in ["Paid", "Pending", "Overdue"] else 0,
-                                             key=f"edit_pay_status_{row['ID']}")
+                                             key=f"edit_pay_status_{row['ID']}_{idx}")
                     if new_status == "Paid" and row['Status'] != "Paid":
                         new_payment_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                     else:
@@ -2065,7 +2068,7 @@ def show_payments():
                 
                 col_c, col_d = st.columns(2)
                 with col_c:
-                    if st.button("💾 Save", key=f"save_payment_{row['ID']}", use_container_width=True):
+                    if st.button("💾 Save", key=f"save_payment_{row['ID']}_{idx}", use_container_width=True):
                         try:
                             df = st.session_state.payments.copy()
                             df.loc[df['ID'] == row['ID'], 'Tenant'] = str(new_tenant)
@@ -2083,7 +2086,7 @@ def show_payments():
                             st.error(f"Error updating payment: {str(e)}")
                 
                 with col_d:
-                    if st.button("❌ Cancel", key=f"cancel_edit_payment_{row['ID']}", use_container_width=True):
+                    if st.button("❌ Cancel", key=f"cancel_edit_payment_{row['ID']}_{idx}", use_container_width=True):
                         st.session_state[f"editing_payment_{row['ID']}"] = False
                         st.rerun()
                 
@@ -2339,9 +2342,9 @@ def show_tenants():
                 col_a, col_b = st.columns(2)
                 
                 with col_a:
-                    new_name = st.text_input("Full Name", value=row['Name'], key=f"edit_name_{row['ID']}")
-                    new_email = st.text_input("Email", value=row['Email'], key=f"edit_email_{row['ID']}")
-                    new_phone = st.text_input("Phone", value=row['Phone'], key=f"edit_phone_{row['ID']}")
+                    new_name = st.text_input("Full Name", value=row['Name'], key=f"edit_name_{row['ID']}_{idx}")
+                    new_email = st.text_input("Email", value=row['Email'], key=f"edit_email_{row['ID']}_{idx}")
+                    new_phone = st.text_input("Phone", value=row['Phone'], key=f"edit_phone_{row['ID']}_{idx}")
                 
                 with col_b:
                     # Property dropdown
@@ -2356,7 +2359,7 @@ def show_tenants():
                             "Property", 
                             prop_options,
                             index=default_index if default_index < len(prop_options) else 0,
-                            key=f"edit_property_select_{row['ID']}"
+                            key=f"edit_property_select_{row['ID']}_{idx}"
                         )
                         
                         # Parse selected property
@@ -2372,10 +2375,10 @@ def show_tenants():
                             new_property = current_prop
                             new_property_type = current_prop_type
                     else:
-                        new_property = st.text_input("Property", value=current_prop, key=f"edit_property_{row['ID']}")
-                        new_property_type = st.text_input("Property Type", value=current_prop_type, key=f"edit_property_type_{row['ID']}")
+                        new_property = st.text_input("Property", value=current_prop, key=f"edit_property_{row['ID']}_{idx}")
+                        new_property_type = st.text_input("Property Type", value=current_prop_type, key=f"edit_property_type_{row['ID']}_{idx}")
                     
-                    new_unit = st.text_input("Unit", value=row['Unit'], key=f"edit_unit_{row['ID']}")
+                    new_unit = st.text_input("Unit", value=row['Unit'], key=f"edit_unit_{row['ID']}_{idx}")
                 
                 # Second row for more fields
                 col_c, col_d = st.columns(2)
@@ -2383,7 +2386,7 @@ def show_tenants():
                 with col_c:
                     # Use 0 as default if value is NaN or empty
                     current_rent = row['Rent'] if pd.notna(row['Rent']) else 0
-                    new_rent = st.number_input("Rent (RWF)", value=float(current_rent), step=5000.0, key=f"edit_rent_{row['ID']}")
+                    new_rent = st.number_input("Rent (RWF)", value=float(current_rent), step=5000.0, key=f"edit_rent_{row['ID']}_{idx}")
                     
                     # Get current status index
                     status_options = ["Active", "Pending", "In Progress", "New"]
@@ -2391,7 +2394,7 @@ def show_tenants():
                         status_index = status_options.index(row['Status']) if row['Status'] in status_options else 0
                     except:
                         status_index = 0
-                    new_status = st.selectbox("Status", status_options, index=status_index, key=f"edit_status_{row['ID']}")
+                    new_status = st.selectbox("Status", status_options, index=status_index, key=f"edit_status_{row['ID']}_{idx}")
                 
                 with col_d:
                     try:
@@ -2400,12 +2403,12 @@ def show_tenants():
                         current_date = datetime.now().date()
                     new_move_in = st.date_input("Move-in Date", 
                                                value=current_date,
-                                               key=f"edit_movein_{row['ID']}")
+                                               key=f"edit_movein_{row['ID']}_{idx}")
                 
                 # Action buttons
                 col_e, col_f = st.columns(2)
                 with col_e:
-                    if st.button("💾 Save Changes", key=f"save_tenant_{row['ID']}", use_container_width=True):
+                    if st.button("💾 Save Changes", key=f"save_tenant_{row['ID']}_{idx}", use_container_width=True):
                         try:
                             old_property = row.get('Property', None)
                             old_property_type = row.get('Property_Type', None)
@@ -2441,7 +2444,7 @@ def show_tenants():
                             st.error(f"Error saving: {str(e)}")
                 
                 with col_f:
-                    if st.button("❌ Cancel", key=f"cancel_edit_{row['ID']}", use_container_width=True):
+                    if st.button("❌ Cancel", key=f"cancel_edit_{row['ID']}_{idx}", use_container_width=True):
                         st.session_state[f"editing_tenant_{row['ID']}"] = False
                         st.rerun()
                 
