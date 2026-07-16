@@ -1489,6 +1489,122 @@ def show_email_report_section():
                 else:
                     st.error(f"❌ {message}")
 
+# ==================== SHOW HEADER ====================
+def show_header():
+    st.markdown(f"""
+    <div class="main-header">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h1>🏠 TenantHub</h1>
+                <p>Property Management System - Rwanda</p>
+            </div>
+            <div style="text-align: right;">
+                <div style="font-size: 0.9rem; opacity: 0.9;">👤 {st.session_state.get('username', 'Admin')}</div>
+                <div style="font-size: 0.8rem; opacity: 0.7;">{datetime.now().strftime('%B %d, %Y')}</div>
+                <div style="margin-top: 5px;">
+                    <span class="save-indicator">💾 Data Saved</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ==================== SHOW METRICS ====================
+def show_metrics():
+    col1, col2, col3, col4 = st.columns(4)
+    
+    tenants_df = st.session_state.tenants
+    properties_df = st.session_state.properties
+    maintenance_df = st.session_state.maintenance
+    payments_df = st.session_state.payments
+    
+    total_tenants = len(tenants_df) if isinstance(tenants_df, pd.DataFrame) and not tenants_df.empty else 0
+    total_properties = len(properties_df) if isinstance(properties_df, pd.DataFrame) and not properties_df.empty else 0
+    total_revenue = tenants_df['Rent'].sum() if isinstance(tenants_df, pd.DataFrame) and not tenants_df.empty else 0
+    active_maintenance = len(maintenance_df[maintenance_df['Status'] != 'Completed']) if isinstance(maintenance_df, pd.DataFrame) and not maintenance_df.empty else 0
+    
+    overdue = 0
+    if isinstance(payments_df, pd.DataFrame) and not payments_df.empty:
+        today = datetime.now().date()
+        for _, row in payments_df.iterrows():
+            if row['Status'] != 'Paid':
+                try:
+                    due_date = datetime.strptime(row['Due_Date'], '%Y-%m-%d').date()
+                    if due_date < today:
+                        overdue += 1
+                except:
+                    continue
+    
+    with col1:
+        st.markdown(f"""
+        <div class="dashboard-card green">
+            <div class="metric-label">👥 Total Tenants</div>
+            <div class="metric-value">{total_tenants}</div>
+            <div style="font-size: 0.85rem; color: #555;">Active: {len(tenants_df[tenants_df['Status'] == 'Active']) if isinstance(tenants_df, pd.DataFrame) and not tenants_df.empty else 0}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+        <div class="dashboard-card orange">
+            <div class="metric-label">🏠 Properties</div>
+            <div class="metric-value">{total_properties}</div>
+            <div style="font-size: 0.85rem; color: #555;">Total Units: {properties_df['Units'].sum() if isinstance(properties_df, pd.DataFrame) and not properties_df.empty else 0}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown(f"""
+        <div class="dashboard-card purple">
+            <div class="metric-label">💰 Monthly Revenue</div>
+            <div class="metric-value">{format_currency(total_revenue)}</div>
+            <div style="font-size: 0.85rem; color: #555;">From {total_tenants} tenants</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col4:
+        st.markdown(f"""
+        <div class="dashboard-card red">
+            <div class="metric-label">⚠️ Overdue Payments</div>
+            <div class="metric-value">{overdue}</div>
+            <div style="font-size: 0.85rem; color: #555;">Need attention</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+# ==================== SHOW REMINDERS ====================
+def show_reminders():
+    """Show payment reminders"""
+    reminders = check_payment_reminders()
+    if reminders:
+        st.markdown("### 🔔 Payment Reminders")
+        for reminder in reminders:
+            if reminder.get('overdue', False):
+                st.markdown(f"""
+                <div class="reminder-card urgent">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <strong>⚠️ OVERDUE</strong> - {reminder['tenant']} (Unit {reminder['unit']})
+                            <br>Amount: {format_currency(reminder['amount'])} - Due: {reminder['due_date']}
+                            <br><span style="color: #E74C3C;">Payment is {abs(reminder['days'])} days overdue!</span>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                urgency = "urgent" if reminder['urgent'] else ""
+                st.markdown(f"""
+                <div class="reminder-card {urgency}">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <strong>⏰ Payment Due Soon</strong> - {reminder['tenant']} (Unit {reminder['unit']})
+                            <br>Amount: {format_currency(reminder['amount'])} - Due: {reminder['due_date']}
+                            <br>⏳ {reminder['days']} days remaining
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        st.markdown("---")
+
 # ==================== SHOW PROPERTIES ====================
 def show_properties():
     st.markdown('<div class="main-content">', unsafe_allow_html=True)
