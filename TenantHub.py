@@ -99,6 +99,7 @@ def load_all_data():
         if 'payments' not in st.session_state or st.session_state.payments.empty:
             st.session_state.payments = load_data_from_csv('payments.csv', get_default_payments())
         
+        # Update occupancy counts after loading
         update_all_occupancy()
         
         return True
@@ -187,11 +188,18 @@ def generate_full_report_text():
     report.append("TENANTS:")
     report.append("-" * 80)
     if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
-        # Header
-        report.append(f"{'Name':<20} {'Property':<20} {'Unit':<10} {'Rent':<15} {'Status':<12} {'Move-In':<12}")
+        # Check if Property column exists
+        has_property = 'Property' in st.session_state.tenants.columns
+        if has_property:
+            report.append(f"{'Name':<20} {'Property':<20} {'Unit':<10} {'Rent':<15} {'Status':<12} {'Move-In':<12}")
+        else:
+            report.append(f"{'Name':<20} {'Unit':<10} {'Rent':<15} {'Status':<12} {'Move-In':<12}")
         report.append("-" * 80)
         for _, tenant in st.session_state.tenants.iterrows():
-            report.append(f"{tenant['Name']:<20} {tenant.get('Property', 'N/A'):<20} {tenant['Unit']:<10} {format_currency(tenant['Rent']):<15} {tenant['Status']:<12} {tenant['Move_In_Date']:<12}")
+            if has_property:
+                report.append(f"{tenant['Name']:<20} {tenant.get('Property', 'N/A'):<20} {tenant['Unit']:<10} {format_currency(tenant['Rent']):<15} {tenant['Status']:<12} {tenant['Move_In_Date']:<12}")
+            else:
+                report.append(f"{tenant['Name']:<20} {tenant['Unit']:<10} {format_currency(tenant['Rent']):<15} {tenant['Status']:<12} {tenant['Move_In_Date']:<12}")
     else:
         report.append("  No tenants found")
     report.append("")
@@ -303,11 +311,15 @@ def generate_full_report_html():
         <h2>👥 Tenants</h2>
     """
     if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
+        has_property = 'Property' in st.session_state.tenants.columns
         html += """
         <table>
             <tr>
                 <th>Name</th>
-                <th>Property</th>
+        """
+        if has_property:
+            html += "<th>Property</th>"
+        html += """
                 <th>Unit</th>
                 <th>Rent</th>
                 <th>Status</th>
@@ -318,7 +330,10 @@ def generate_full_report_html():
             html += f"""
             <tr>
                 <td>{tenant['Name']}</td>
-                <td>{tenant.get('Property', 'N/A')}</td>
+            """
+            if has_property:
+                html += f"<td>{tenant.get('Property', 'N/A')}</td>"
+            html += f"""
                 <td>{tenant['Unit']}</td>
                 <td>{format_currency(tenant['Rent'])}</td>
                 <td><span class="status-{tenant['Status'].lower()}">{tenant['Status']}</span></td>
@@ -456,11 +471,9 @@ def send_email_report_with_table(recipient_email, subject, html_content, csv_att
         msg['To'] = recipient_email
         msg['Subject'] = subject
         
-        # Create HTML version
         html_part = MIMEText(html_content, 'html')
         msg.attach(html_part)
         
-        # Attach CSV if provided
         if csv_attachment:
             part = MIMEBase('application', 'octet-stream')
             part.set_payload(csv_attachment.getvalue())
@@ -497,6 +510,7 @@ def send_tenant_info_email(tenant_name, email):
         tenant = st.session_state.tenants[st.session_state.tenants['Name'] == tenant_name]
         if not tenant.empty:
             tenant_data = tenant.iloc[0]
+            has_property = 'Property' in st.session_state.tenants.columns
             
             html = f"""
             <html>
@@ -531,7 +545,10 @@ def send_tenant_info_email(tenant_name, email):
                 <table>
                     <tr><td><strong>Email:</strong></td><td>{tenant_data['Email']}</td></tr>
                     <tr><td><strong>Phone:</strong></td><td>{tenant_data['Phone']}</td></tr>
-                    <tr><td><strong>Property:</strong></td><td>{tenant_data.get('Property', 'N/A')}</td></tr>
+            """
+            if has_property:
+                html += f"<tr><td><strong>Property:</strong></td><td>{tenant_data.get('Property', 'N/A')}</td></tr>"
+            html += f"""
                     <tr><td><strong>Unit:</strong></td><td>{tenant_data['Unit']}</td></tr>
                     <tr><td><strong>Status:</strong></td><td>{tenant_data['Status']}</td></tr>
                     <tr><td><strong>Monthly Rent:</strong></td><td>{format_currency(tenant_data['Rent'])}</td></tr>
@@ -834,7 +851,7 @@ def logout():
 # ==================== DATA MANAGEMENT ====================
 def get_default_tenants():
     """Return empty dataframe with correct columns"""
-    return pd.DataFrame(columns=['ID', 'Name', 'Email', 'Phone', 'Property', 'Unit', 'Status', 'Rent', 'Move_In_Date'])
+    return pd.DataFrame(columns=['ID', 'Name', 'Email', 'Phone', 'Unit', 'Status', 'Rent', 'Move_In_Date'])
 
 def get_default_properties():
     """Return empty dataframe with correct columns"""
@@ -906,11 +923,16 @@ def update_property_occupancy(property_name):
     if isinstance(st.session_state.properties, pd.DataFrame) and not st.session_state.properties.empty:
         if property_name in st.session_state.properties['Address'].values:
             if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
-                active_tenants = st.session_state.tenants[
-                    (st.session_state.tenants['Property'] == property_name) & 
-                    (st.session_state.tenants['Status'] == 'Active')
-                ]
-                occupancy_count = len(active_tenants)
+                # Check if Property column exists
+                if 'Property' in st.session_state.tenants.columns:
+                    active_tenants = st.session_state.tenants[
+                        (st.session_state.tenants['Property'] == property_name) & 
+                        (st.session_state.tenants['Status'] == 'Active')
+                    ]
+                    occupancy_count = len(active_tenants)
+                else:
+                    # If no Property column, count all tenants
+                    occupancy_count = len(st.session_state.tenants[st.session_state.tenants['Status'] == 'Active'])
                 
                 idx = st.session_state.properties[st.session_state.properties['Address'] == property_name].index[0]
                 st.session_state.properties.loc[idx, 'Occupancy'] = occupancy_count
@@ -1258,7 +1280,7 @@ def delete_tenant(tenant_id):
     # Get tenant info before deleting
     tenant = st.session_state.tenants[st.session_state.tenants['ID'] == tenant_id]
     if not tenant.empty:
-        property_name = tenant.iloc[0].get('Property', None)
+        property_name = tenant.iloc[0].get('Property', None) if 'Property' in st.session_state.tenants.columns else None
         
         df = st.session_state.tenants
         df = df[df['ID'] != tenant_id]
@@ -1300,7 +1322,6 @@ def show_email_report_section():
     """Display email report section in sidebar or main area"""
     st.markdown("### 📧 Email Reports")
     
-    # Send full report with HTML table
     if st.button("📊 Send Full Report (Table)", use_container_width=True, key="email_full_report_table"):
         with st.spinner("Generating and sending report..."):
             html_content = generate_full_report_html()
@@ -1314,7 +1335,6 @@ def show_email_report_section():
             else:
                 st.error(f"❌ {message}")
     
-    # Send full report as text (plain)
     if st.button("📊 Send Full Report (Text)", use_container_width=True, key="email_full_report_text"):
         with st.spinner("Generating and sending report..."):
             report_text = generate_full_report_text()
@@ -1328,7 +1348,6 @@ def show_email_report_section():
             else:
                 st.error(f"❌ {message}")
     
-    # Send tenant report
     if st.button("👥 Send Tenant Report", use_container_width=True, key="email_tenant_report"):
         with st.spinner("Generating and sending report..."):
             csv_buffer = generate_tenant_report()
@@ -1347,7 +1366,6 @@ def show_email_report_section():
             else:
                 st.warning("No tenant data available")
     
-    # Send payment report
     if st.button("💰 Send Payment Report", use_container_width=True, key="email_payment_report"):
         with st.spinner("Generating and sending report..."):
             csv_buffer = generate_payment_report()
@@ -1366,7 +1384,6 @@ def show_email_report_section():
             else:
                 st.warning("No payment data available")
     
-    # Individual tenant email
     if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
         st.markdown("### 📤 Send Tenant Info")
         tenant_names = st.session_state.tenants['Name'].tolist()
@@ -1510,6 +1527,7 @@ def show_tenants():
                 phone = st.text_input("Phone", placeholder="(555) 123-4567", key="tenant_phone")
             
             with col_b:
+                # Property selection
                 available_props = get_available_properties()
                 if available_props:
                     prop_options = [f"{p['address']} ({p['available_units']} units available)" for p in available_props]
@@ -1520,10 +1538,14 @@ def show_tenants():
                     if not property_data.empty:
                         max_units = property_data.iloc[0]['Units']
                         unit_options = [f"Unit {i+1}" for i in range(max_units)]
-                        occupied_units = st.session_state.tenants[
-                            (st.session_state.tenants['Property'] == property_name) & 
-                            (st.session_state.tenants['Status'] == 'Active')
-                        ]['Unit'].tolist()
+                        # Get occupied units
+                        if 'Property' in st.session_state.tenants.columns:
+                            occupied_units = st.session_state.tenants[
+                                (st.session_state.tenants['Property'] == property_name) & 
+                                (st.session_state.tenants['Status'] == 'Active')
+                            ]['Unit'].tolist()
+                        else:
+                            occupied_units = []
                         available_units = [u for u in unit_options if u not in occupied_units]
                         
                         if available_units:
@@ -1548,6 +1570,10 @@ def show_tenants():
                 if st.button("💾 Add Tenant", key="add_tenant_btn"):
                     if name and unit and rent > 0 and property_name:
                         new_id = len(st.session_state.tenants) + 1
+                        # Add Property column if it doesn't exist
+                        if 'Property' not in st.session_state.tenants.columns:
+                            st.session_state.tenants['Property'] = ''
+                        
                         new_tenant = pd.DataFrame({
                             'ID': [new_id],
                             'Name': [name],
@@ -1616,11 +1642,17 @@ def show_tenants():
         
         filtered_df = st.session_state.tenants.copy()
         if search:
-            filtered_df = filtered_df[
-                filtered_df['Name'].str.contains(search, case=False, na=False) | 
-                filtered_df['Unit'].str.contains(search, case=False, na=False) |
-                filtered_df['Property'].str.contains(search, case=False, na=False)
-            ]
+            if 'Property' in filtered_df.columns:
+                filtered_df = filtered_df[
+                    filtered_df['Name'].str.contains(search, case=False, na=False) | 
+                    filtered_df['Unit'].str.contains(search, case=False, na=False) |
+                    filtered_df['Property'].str.contains(search, case=False, na=False)
+                ]
+            else:
+                filtered_df = filtered_df[
+                    filtered_df['Name'].str.contains(search, case=False, na=False) | 
+                    filtered_df['Unit'].str.contains(search, case=False, na=False)
+                ]
         
         for idx, row in filtered_df.iterrows():
             col1, col2, col3, col4, col5, col6 = st.columns([1.5, 1.5, 1, 1, 0.8, 0.8])
@@ -1630,7 +1662,8 @@ def show_tenants():
                 st.caption(row['Email'])
             
             with col2:
-                st.write(f"Property: {row['Property']}")
+                if 'Property' in row and row.get('Property'):
+                    st.write(f"Property: {row['Property']}")
                 st.write(f"Unit: {row['Unit']}")
                 st.write(f"Rent: {format_currency(row['Rent'])}")
                 st.caption(f"Move-in: {row['Move_In_Date']}")
@@ -1646,7 +1679,8 @@ def show_tenants():
             
             with col4:
                 if st.button(f"📄 Agreement", key=f"agreement_{row['ID']}_{idx}", use_container_width=True):
-                    pdf_buffer = generate_agreement_pdf(row['Name'], row['Property'], row['Unit'], row['Rent'], row['Move_In_Date'])
+                    property_name = row.get('Property', 'N/A')
+                    pdf_buffer = generate_agreement_pdf(row['Name'], property_name, row['Unit'], row['Rent'], row['Move_In_Date'])
                     file_extension = "pdf" if REPORTLAB_AVAILABLE else "txt"
                     st.download_button(
                         label=f"📥 Download.{file_extension}",
@@ -1668,7 +1702,7 @@ def show_tenants():
                             new_phone = st.text_input("Phone", value=row['Phone'], key=f"edit_phone_{row['ID']}")
                         
                         with col_b:
-                            new_property = st.text_input("Property", value=row['Property'], key=f"edit_property_{row['ID']}")
+                            new_property = st.text_input("Property", value=row.get('Property', ''), key=f"edit_property_{row['ID']}")
                             new_unit = st.text_input("Unit", value=row['Unit'], key=f"edit_unit_{row['ID']}")
                             new_rent = st.number_input("Rent (RWF)", value=float(row['Rent']), step=5000.0, key=f"edit_rent_{row['ID']}")
                             new_status = st.selectbox("Status", ["Active", "Pending", "In Progress", "New"], 
@@ -1678,12 +1712,13 @@ def show_tenants():
                         col_c, col_d = st.columns(2)
                         with col_c:
                             if st.button("💾 Save", key=f"save_tenant_{row['ID']}"):
-                                old_property = row['Property']
+                                old_property = row.get('Property', None)
                                 df = st.session_state.tenants
                                 df.loc[df['ID'] == row['ID'], 'Name'] = new_name
                                 df.loc[df['ID'] == row['ID'], 'Email'] = new_email
                                 df.loc[df['ID'] == row['ID'], 'Phone'] = new_phone
-                                df.loc[df['ID'] == row['ID'], 'Property'] = new_property
+                                if 'Property' in df.columns:
+                                    df.loc[df['ID'] == row['ID'], 'Property'] = new_property
                                 df.loc[df['ID'] == row['ID'], 'Unit'] = new_unit
                                 df.loc[df['ID'] == row['ID'], 'Rent'] = new_rent
                                 df.loc[df['ID'] == row['ID'], 'Status'] = new_status
@@ -1825,9 +1860,11 @@ def show_properties():
             
             with col5:
                 if st.button(f"🗑️ Delete", key=f"del_prop_{row['ID']}_{idx}", use_container_width=True):
+                    # Check if property has tenants
                     has_tenants = False
                     if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
-                        has_tenants = len(st.session_state.tenants[st.session_state.tenants['Property'] == row['Address']]) > 0
+                        if 'Property' in st.session_state.tenants.columns:
+                            has_tenants = len(st.session_state.tenants[st.session_state.tenants['Property'] == row['Address']]) > 0
                     
                     if has_tenants:
                         st.error("❌ Cannot delete property with assigned tenants! Please remove tenants first.")
