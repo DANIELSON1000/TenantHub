@@ -108,12 +108,14 @@ def load_all_data():
             if 'Payment_Time' not in st.session_state.payments.columns:
                 st.session_state.payments['Payment_Time'] = ''
         
-        # Ensure Property column exists in tenants
+        # Ensure Property columns exist in tenants
         if 'tenants' in st.session_state and isinstance(st.session_state.tenants, pd.DataFrame):
             if 'Property' not in st.session_state.tenants.columns:
                 st.session_state.tenants['Property'] = ''
             if 'Property_Type' not in st.session_state.tenants.columns:
                 st.session_state.tenants['Property_Type'] = ''
+            if 'Property_ID' not in st.session_state.tenants.columns:
+                st.session_state.tenants['Property_ID'] = ''
         
         update_all_occupancy()
         
@@ -831,7 +833,7 @@ def logout():
 # ==================== DATA MANAGEMENT ====================
 def get_default_tenants():
     """Return empty dataframe with correct columns"""
-    return pd.DataFrame(columns=['ID', 'Name', 'Email', 'Phone', 'Property', 'Property_Type', 'Unit', 'Status', 'Rent', 'Move_In_Date'])
+    return pd.DataFrame(columns=['ID', 'Name', 'Email', 'Phone', 'Property', 'Property_Type', 'Property_ID', 'Unit', 'Status', 'Rent', 'Move_In_Date'])
 
 def get_default_properties():
     """Return empty dataframe with correct columns"""
@@ -900,31 +902,43 @@ def upload_csv(df_type):
 # ==================== PROPERTY OCCUPANCY MANAGEMENT ====================
 def update_property_occupancy(property_name):
     """Update occupancy count for a specific property"""
-    if isinstance(st.session_state.properties, pd.DataFrame) and not st.session_state.properties.empty:
-        if property_name in st.session_state.properties['Address'].values:
-            if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
-                if 'Property' in st.session_state.tenants.columns:
-                    active_tenants = st.session_state.tenants[
-                        (st.session_state.tenants['Property'] == property_name) & 
-                        (st.session_state.tenants['Status'] == 'Active')
-                    ]
-                    occupancy_count = len(active_tenants)
-                else:
-                    occupancy_count = len(st.session_state.tenants[st.session_state.tenants['Status'] == 'Active'])
-                
-                idx = st.session_state.properties[st.session_state.properties['Address'] == property_name].index[0]
-                st.session_state.properties.loc[idx, 'Occupancy'] = occupancy_count
-                save_all_data()
-                return True
-    return False
+    try:
+        if isinstance(st.session_state.properties, pd.DataFrame) and not st.session_state.properties.empty:
+            # Find property by name (case-insensitive)
+            property_mask = st.session_state.properties['Address'].str.lower() == property_name.lower()
+            if property_mask.any():
+                if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
+                    # Count active tenants for this property (case-insensitive)
+                    if 'Property' in st.session_state.tenants.columns:
+                        active_tenants = st.session_state.tenants[
+                            (st.session_state.tenants['Property'].str.lower() == property_name.lower()) & 
+                            (st.session_state.tenants['Status'] == 'Active')
+                        ]
+                        occupancy_count = len(active_tenants)
+                    else:
+                        occupancy_count = len(st.session_state.tenants[st.session_state.tenants['Status'] == 'Active'])
+                    
+                    # Update occupancy
+                    idx = st.session_state.properties[property_mask].index[0]
+                    st.session_state.properties.loc[idx, 'Occupancy'] = occupancy_count
+                    save_all_data()
+                    return True
+        return False
+    except Exception as e:
+        print(f"Error updating occupancy for {property_name}: {e}")
+        return False
 
 def update_all_occupancy():
     """Update occupancy counts for all properties"""
-    if isinstance(st.session_state.properties, pd.DataFrame) and not st.session_state.properties.empty:
-        for _, prop in st.session_state.properties.iterrows():
-            update_property_occupancy(prop['Address'])
-        return True
-    return False
+    try:
+        if isinstance(st.session_state.properties, pd.DataFrame) and not st.session_state.properties.empty:
+            for _, prop in st.session_state.properties.iterrows():
+                update_property_occupancy(prop['Address'])
+            return True
+        return False
+    except Exception as e:
+        print(f"Error updating all occupancy: {e}")
+        return False
 
 def get_available_properties():
     """Get list of properties with available units"""
@@ -936,7 +950,8 @@ def get_available_properties():
                     'address': prop['Address'],
                     'available_units': prop['Units'] - prop['Occupancy'],
                     'total_units': prop['Units'],
-                    'type': prop['Type']
+                    'type': prop['Type'],
+                    'id': prop['ID']
                 })
     return available
 
@@ -1527,19 +1542,21 @@ def show_tenants():
                 phone = st.text_input("Phone", placeholder="(555) 123-4567", key="tenant_phone")
             
             with col_b:
-                # Property selection with type - FIXED
+                # Property selection with type
                 available_props = get_available_properties()
                 if available_props:
                     # Create display options with property type
                     prop_options = []
                     prop_addresses = []
                     prop_types = []
+                    prop_ids = []
                     
                     for p in available_props:
                         display_text = f"{p['address']} ({p['type']}) - {p['available_units']} units available"
                         prop_options.append(display_text)
                         prop_addresses.append(p['address'])
                         prop_types.append(p['type'])
+                        prop_ids.append(p['id'])
                     
                     selected_index = st.selectbox(
                         "Select Property", 
@@ -1550,6 +1567,7 @@ def show_tenants():
                     
                     property_name = prop_addresses[selected_index] if selected_index is not None else ""
                     property_type = prop_types[selected_index] if selected_index is not None else ""
+                    property_id = prop_ids[selected_index] if selected_index is not None else ""
                     
                     # Get available units for this property
                     if property_name:
@@ -1561,7 +1579,7 @@ def show_tenants():
                             # Get occupied units
                             if 'Property' in st.session_state.tenants.columns:
                                 occupied_units = st.session_state.tenants[
-                                    (st.session_state.tenants['Property'] == property_name) & 
+                                    (st.session_state.tenants['Property'].str.lower() == property_name.lower()) & 
                                     (st.session_state.tenants['Status'] == 'Active')
                                 ]['Unit'].tolist()
                             else:
@@ -1582,6 +1600,7 @@ def show_tenants():
                     st.warning("⚠️ No properties with available units! Please add a property first.")
                     property_name = ""
                     property_type = ""
+                    property_id = ""
                     unit = st.text_input("Unit Number", placeholder="3B", key="tenant_unit_input")
                 
                 rent = st.number_input("Monthly Rent (RWF)", min_value=0, step=5000, key="tenant_rent")
@@ -1600,6 +1619,8 @@ def show_tenants():
                             st.session_state.tenants['Property'] = ''
                         if 'Property_Type' not in st.session_state.tenants.columns:
                             st.session_state.tenants['Property_Type'] = ''
+                        if 'Property_ID' not in st.session_state.tenants.columns:
+                            st.session_state.tenants['Property_ID'] = ''
                         
                         new_tenant = pd.DataFrame({
                             'ID': [new_id],
@@ -1608,6 +1629,7 @@ def show_tenants():
                             'Phone': [phone],
                             'Property': [property_name],
                             'Property_Type': [property_type],
+                            'Property_ID': [property_id],
                             'Unit': [unit],
                             'Status': [status],
                             'Rent': [rent],
@@ -1615,8 +1637,10 @@ def show_tenants():
                         })
                         st.session_state.tenants = pd.concat([st.session_state.tenants, new_tenant], ignore_index=True)
                         
+                        # Update occupancy for the property
                         update_property_occupancy(property_name)
                         
+                        # Generate first payment
                         next_due = generate_next_payment_date(move_in_date.strftime('%Y-%m-%d'))
                         if next_due:
                             new_payment = pd.DataFrame({
@@ -1889,7 +1913,7 @@ def show_properties():
                     has_tenants = False
                     if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
                         if 'Property' in st.session_state.tenants.columns:
-                            has_tenants = len(st.session_state.tenants[st.session_state.tenants['Property'] == row['Address']]) > 0
+                            has_tenants = len(st.session_state.tenants[st.session_state.tenants['Property'].str.lower() == row['Address'].lower()]) > 0
                     
                     if has_tenants:
                         st.error("❌ Cannot delete property with assigned tenants! Please remove tenants first.")
