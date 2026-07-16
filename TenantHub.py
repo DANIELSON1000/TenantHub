@@ -39,12 +39,7 @@ def save_data_to_csv(df, filename):
     """Save DataFrame to CSV file"""
     try:
         ensure_data_dir()
-        if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
-            filepath = os.path.join(DATA_DIR, filename)
-            df.to_csv(filepath, index=False)
-            return True
-        elif df is not None and isinstance(df, pd.DataFrame) and df.empty:
-            # Save empty dataframe
+        if df is not None and isinstance(df, pd.DataFrame):
             filepath = os.path.join(DATA_DIR, filename)
             df.to_csv(filepath, index=False)
             return True
@@ -112,7 +107,7 @@ def load_all_data():
         return False
 
 def reset_to_defaults():
-    """Reset all data to defaults"""
+    """Reset all data to defaults (empty dataframes)"""
     st.session_state.tenants = get_default_tenants()
     st.session_state.properties = get_default_properties()
     st.session_state.maintenance = get_default_maintenance()
@@ -536,47 +531,20 @@ def logout():
 
 # ==================== DATA MANAGEMENT ====================
 def get_default_tenants():
-    return pd.DataFrame({
-        'ID': [1, 2, 3, 4, 5],
-        'Name': ['John Smith', 'Sarah Johnson', 'Mike Davis', 'Emily Brown', 'David Wilson'],
-        'Email': ['john@email.com', 'sarah@email.com', 'mike@email.com', 'emily@email.com', 'david@email.com'],
-        'Phone': ['(555) 123-4567', '(555) 234-5678', '(555) 345-6789', '(555) 456-7890', '(555) 567-8901'],
-        'Unit': ['3B', '7C', '12A', '5D', '9E'],
-        'Status': ['Active', 'Active', 'Pending', 'Active', 'Active'],
-        'Rent': [1200, 1400, 1600, 1100, 1500],
-        'Move_In_Date': ['2024-01-01', '2024-03-15', '2024-06-01', '2023-11-01', '2024-02-01']
-    })
+    """Return empty dataframe with correct columns"""
+    return pd.DataFrame(columns=['ID', 'Name', 'Email', 'Phone', 'Unit', 'Status', 'Rent', 'Move_In_Date'])
 
 def get_default_properties():
-    return pd.DataFrame({
-        'ID': [1, 2, 3, 4, 5],
-        'Address': ['123 Main St', '456 Oak Ave', '789 Pine Rd', '321 Elm St', '654 Maple Dr'],
-        'City': ['Springfield', 'Riverside', 'Lakewood', 'Springfield', 'Riverside'],
-        'Type': ['1 Room & Dining Room', '1 Room', '2 Room & Dining Room', '1 Room', '2 Room & Dining Room'],
-        'Units': [12, 8, 16, 6, 4],
-        'Occupancy': [10, 7, 15, 5, 4]
-    })
+    """Return empty dataframe with correct columns"""
+    return pd.DataFrame(columns=['ID', 'Address', 'City', 'Type', 'Units', 'Occupancy'])
 
 def get_default_maintenance():
-    return pd.DataFrame({
-        'ID': ['M-001', 'M-002', 'M-003', 'M-004'],
-        'Unit': ['3B', '7C', '12A', '5D'],
-        'Issue': ['Leaky faucet in kitchen', 'Broken AC unit', 'Electrical outlet not working', 'Water heater malfunction'],
-        'Status': ['In Progress', 'New', 'Active', 'Completed'],
-        'Priority': ['Medium', 'High', 'Low', 'High'],
-        'Reported': ['2024-10-20', '2024-10-22', '2024-10-21', '2024-10-18'],
-        'Tenant': ['John Smith', 'Sarah Johnson', 'Mike Davis', 'Emily Brown']
-    })
+    """Return empty dataframe with correct columns"""
+    return pd.DataFrame(columns=['ID', 'Unit', 'Issue', 'Status', 'Priority', 'Reported', 'Tenant'])
 
 def get_default_payments():
-    return pd.DataFrame({
-        'ID': [1, 2, 3, 4],
-        'Tenant': ['John Smith', 'Sarah Johnson', 'Emily Brown', 'David Wilson'],
-        'Unit': ['3B', '7C', '5D', '9E'],
-        'Amount': [1200, 1400, 1100, 1500],
-        'Due_Date': ['2024-11-01', '2024-11-15', '2024-11-01', '2024-11-01'],
-        'Status': ['Paid', 'Paid', 'Pending', 'Paid']
-    })
+    """Return empty dataframe with correct columns"""
+    return pd.DataFrame(columns=['ID', 'Tenant', 'Unit', 'Amount', 'Due_Date', 'Status'])
 
 def init_data():
     """Initialize data from CSV files if they exist, otherwise use defaults"""
@@ -696,6 +664,86 @@ def generate_payment_dates(move_in_date):
         return due_dates
     except:
         return []
+
+def generate_next_payment_date(move_in_date):
+    """Generate the next payment due date based on move-in date"""
+    try:
+        move_in = datetime.strptime(move_in_date, '%Y-%m-%d').date()
+        today = datetime.now().date()
+        
+        # Get the day of month from move-in date
+        day_of_month = move_in.day
+        
+        # Start from today and find the next due date
+        test_date = today
+        for _ in range(12):  # Check up to 12 months ahead
+            year = test_date.year
+            month = test_date.month
+            
+            # Handle months with fewer days
+            try:
+                last_day = pd.Timestamp(year=year, month=month, day=1).days_in_month
+                due_day = min(day_of_month, last_day)
+                due_date = datetime(year, month, due_day).date()
+                
+                # If due date is today or in the future
+                if due_date >= today:
+                    return due_date.strftime('%Y-%m-%d')
+                
+                # Move to next month
+                if month == 12:
+                    test_date = datetime(year + 1, 1, 1).date()
+                else:
+                    test_date = datetime(year, month + 1, 1).date()
+            except:
+                # Move to next month if error
+                if month == 12:
+                    test_date = datetime(year + 1, 1, 1).date()
+                else:
+                    test_date = datetime(year, month + 1, 1).date()
+                continue
+        
+        return None
+    except:
+        return None
+
+def auto_generate_payments():
+    """Automatically generate payment records for all active tenants"""
+    if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
+        new_payments_added = 0
+        
+        for _, tenant in st.session_state.tenants.iterrows():
+            if tenant['Status'] == 'Active':
+                # Check if payment already exists for this month
+                current_month = datetime.now().strftime('%Y-%m')
+                existing_payment = st.session_state.payments[
+                    (st.session_state.payments['Tenant'] == tenant['Name']) & 
+                    (st.session_state.payments['Due_Date'].str[:7] == current_month)
+                ]
+                
+                if existing_payment.empty:
+                    # Generate next payment date
+                    next_due = generate_next_payment_date(tenant['Move_In_Date'])
+                    if next_due:
+                        new_payment = pd.DataFrame({
+                            'ID': [len(st.session_state.payments) + 1],
+                            'Tenant': [tenant['Name']],
+                            'Unit': [tenant['Unit']],
+                            'Amount': [tenant['Rent']],
+                            'Due_Date': [next_due],
+                            'Status': ['Pending']
+                        })
+                        st.session_state.payments = pd.concat([st.session_state.payments, new_payment], ignore_index=True)
+                        new_payments_added += 1
+        
+        if new_payments_added > 0:
+            save_all_data()
+            st.success(f"✅ Auto-generated {new_payments_added} new payment{'s' if new_payments_added > 1 else ''} for this month!")
+        elif len(st.session_state.tenants) > 0:
+            st.info("No new payments needed this month.")
+        
+        return new_payments_added
+    return 0
 
 # ==================== PDF AGREEMENT GENERATOR ====================
 def generate_agreement_pdf(tenant_name, unit, rent, move_in_date):
@@ -1116,6 +1164,7 @@ def show_tenants():
     st.markdown('<div class="main-content">', unsafe_allow_html=True)
     st.markdown('<h2 class="section-header">👥 Tenant Management</h2>', unsafe_allow_html=True)
     
+    # Auto-generate payments button
     col1, col2 = st.columns([3, 1])
     
     with col1:
@@ -1150,20 +1199,21 @@ def show_tenants():
                     })
                     st.session_state.tenants = pd.concat([st.session_state.tenants, new_tenant], ignore_index=True)
                     
-                    due_dates = generate_payment_dates(move_in_date.strftime('%Y-%m-%d'))
-                    for due_date in due_dates:
+                    # Generate first payment due date
+                    next_due = generate_next_payment_date(move_in_date.strftime('%Y-%m-%d'))
+                    if next_due:
                         new_payment = pd.DataFrame({
                             'ID': [len(st.session_state.payments) + 1],
                             'Tenant': [name],
                             'Unit': [unit],
                             'Amount': [rent],
-                            'Due_Date': [due_date],
+                            'Due_Date': [next_due],
                             'Status': ['Pending']
                         })
                         st.session_state.payments = pd.concat([st.session_state.payments, new_payment], ignore_index=True)
                     
                     save_all_data()  # Save after adding
-                    st.success(f"✅ Tenant added with payment schedule! ({format_currency(rent)})")
+                    st.success(f"✅ Tenant added! Next payment due: {next_due if next_due else 'N/A'} ({format_currency(rent)})")
                     st.rerun()
             
             with col_d:
@@ -1188,6 +1238,10 @@ def show_tenants():
             upload_csv('Tenants')
         with st.expander("📧 Email Reports", expanded=False):
             show_email_report_section()
+        # Auto-generate payments button in sidebar
+        if st.button("🔄 Generate All Payments", use_container_width=True, key="auto_gen_payments"):
+            with st.spinner("Generating payments..."):
+                auto_generate_payments()
     
     if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
         search = st.text_input("🔍 Search tenants", placeholder="Search by name or unit...", key="tenant_search")
@@ -1520,7 +1574,12 @@ def show_payments():
     col1, col2 = st.columns([3, 1])
     
     with col1:
-        with st.expander("➕ Record Payment", expanded=False):
+        # Auto-generate payments button
+        if st.button("🔄 Generate Payments for This Month", use_container_width=True, key="auto_gen_payments_btn"):
+            with st.spinner("Generating payments..."):
+                auto_generate_payments()
+        
+        with st.expander("➕ Record Payment Manually", expanded=False):
             col_a, col_b = st.columns(2)
             
             with col_a:
@@ -1571,6 +1630,9 @@ def show_payments():
         filtered_df = st.session_state.payments.copy()
         if filter_status != "All":
             filtered_df = filtered_df[filtered_df['Status'] == filter_status]
+        
+        # Sort by due date (most recent first)
+        filtered_df = filtered_df.sort_values('Due_Date', ascending=False)
         
         for idx, row in filtered_df.iterrows():
             col1, col2, col3, col4, col5, col6 = st.columns([1.5, 1, 1, 1, 0.8, 0.8])
@@ -1663,6 +1725,13 @@ def show_sidebar():
             st.metric("Tenants", len(st.session_state.tenants) if isinstance(st.session_state.tenants, pd.DataFrame) else 0)
         with col2:
             st.metric("Properties", len(st.session_state.properties) if isinstance(st.session_state.properties, pd.DataFrame) else 0)
+        
+        st.markdown("---")
+        
+        # Auto-generate payments in sidebar
+        if st.button("🔄 Auto-Generate Payments", use_container_width=True, key="sidebar_auto_gen"):
+            with st.spinner("Generating payments..."):
+                auto_generate_payments()
         
         st.markdown("---")
         
