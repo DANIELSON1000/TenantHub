@@ -55,7 +55,7 @@ def load_data_from_csv(filename, default_df):
         if os.path.exists(filepath):
             df = pd.read_csv(filepath)
             if not df.empty:
-                # Ensure all columns exist
+                # Ensure all columns exist and have correct types
                 for col in default_df.columns:
                     if col not in df.columns:
                         df[col] = ''
@@ -116,6 +116,9 @@ def load_all_data():
                 st.session_state.tenants['Property_Type'] = ''
             if 'Property_ID' not in st.session_state.tenants.columns:
                 st.session_state.tenants['Property_ID'] = ''
+            # Convert ID to int if needed
+            if st.session_state.tenants['ID'].dtype != 'int64':
+                st.session_state.tenants['ID'] = st.session_state.tenants['ID'].astype('int64')
         
         update_all_occupancy()
         
@@ -860,8 +863,20 @@ def logout():
 
 # ==================== DATA MANAGEMENT ====================
 def get_default_tenants():
-    """Return empty dataframe with correct columns"""
-    return pd.DataFrame(columns=['ID', 'Name', 'Email', 'Phone', 'Property', 'Property_Type', 'Property_ID', 'Unit', 'Status', 'Rent', 'Move_In_Date'])
+    """Return empty dataframe with correct columns and types"""
+    return pd.DataFrame({
+        'ID': pd.Series(dtype='int64'),
+        'Name': pd.Series(dtype='str'),
+        'Email': pd.Series(dtype='str'),
+        'Phone': pd.Series(dtype='str'),
+        'Property': pd.Series(dtype='str'),
+        'Property_Type': pd.Series(dtype='str'),
+        'Property_ID': pd.Series(dtype='str'),
+        'Unit': pd.Series(dtype='str'),
+        'Status': pd.Series(dtype='str'),
+        'Rent': pd.Series(dtype='float64'),
+        'Move_In_Date': pd.Series(dtype='str')
+    })
 
 def get_default_properties():
     """Return empty dataframe with correct columns"""
@@ -1799,6 +1814,11 @@ def show_tenants():
                 for p in all_props:
                     prop_options.append(f"{p['address']} ({p['type']})")
                 
+                # Find current property display
+                current_prop = row.get('Property', '')
+                current_prop_type = row.get('Property_Type', '')
+                current_display = f"{current_prop} ({current_prop_type})" if current_prop and current_prop_type else ""
+                
                 # Use full width columns for edit form
                 col_a, col_b = st.columns(2)
                 
@@ -1808,11 +1828,7 @@ def show_tenants():
                     new_phone = st.text_input("Phone", value=row['Phone'], key=f"edit_phone_{row['ID']}")
                 
                 with col_b:
-                    # Property dropdown instead of text input
-                    current_prop = row.get('Property', '')
-                    current_prop_type = row.get('Property_Type', '')
-                    current_display = f"{current_prop} ({current_prop_type})" if current_prop and current_prop_type else "Select Property"
-                    
+                    # Property dropdown
                     if prop_options:
                         # Find the index of current property
                         try:
@@ -1828,10 +1844,10 @@ def show_tenants():
                         )
                         
                         # Parse selected property
-                        if selected_prop and selected_prop != "Select Property":
+                        if selected_prop:
                             # Extract property name and type
-                            parts = selected_prop.split(" (")
-                            if len(parts) == 2:
+                            if " (" in selected_prop and ")" in selected_prop:
+                                parts = selected_prop.split(" (")
                                 new_property = parts[0]
                                 new_property_type = parts[1].replace(")", "")
                             else:
@@ -1865,31 +1881,40 @@ def show_tenants():
                                                key=f"edit_movein_{row['ID']}")
                 
                 # Action buttons
-                col_e, col_f, col_g = st.columns([1, 1, 1])
+                col_e, col_f = st.columns(2)
                 with col_e:
                     if st.button("💾 Save Changes", key=f"save_tenant_{row['ID']}", use_container_width=True):
-                        old_property = row.get('Property', None)
-                        
-                        # Update using .loc with proper type conversion
-                        st.session_state.tenants.loc[st.session_state.tenants['ID'] == row['ID'], 'Name'] = str(new_name)
-                        st.session_state.tenants.loc[st.session_state.tenants['ID'] == row['ID'], 'Email'] = str(new_email)
-                        st.session_state.tenants.loc[st.session_state.tenants['ID'] == row['ID'], 'Phone'] = str(new_phone)
-                        st.session_state.tenants.loc[st.session_state.tenants['ID'] == row['ID'], 'Property'] = str(new_property)
-                        st.session_state.tenants.loc[st.session_state.tenants['ID'] == row['ID'], 'Property_Type'] = str(new_property_type)
-                        st.session_state.tenants.loc[st.session_state.tenants['ID'] == row['ID'], 'Unit'] = str(new_unit)
-                        st.session_state.tenants.loc[st.session_state.tenants['ID'] == row['ID'], 'Rent'] = float(new_rent)
-                        st.session_state.tenants.loc[st.session_state.tenants['ID'] == row['ID'], 'Status'] = str(new_status)
-                        st.session_state.tenants.loc[st.session_state.tenants['ID'] == row['ID'], 'Move_In_Date'] = new_move_in.strftime('%Y-%m-%d')
-                        
-                        if old_property:
-                            update_property_occupancy(old_property)
-                        if new_property:
-                            update_property_occupancy(new_property)
-                        
-                        save_all_data()
-                        st.session_state[f"editing_tenant_{row['ID']}"] = False
-                        st.success("✅ Tenant updated successfully!")
-                        st.rerun()
+                        try:
+                            old_property = row.get('Property', None)
+                            
+                            # Create a copy of the dataframe
+                            df = st.session_state.tenants.copy()
+                            
+                            # Update values using loc
+                            df.loc[df['ID'] == row['ID'], 'Name'] = str(new_name)
+                            df.loc[df['ID'] == row['ID'], 'Email'] = str(new_email)
+                            df.loc[df['ID'] == row['ID'], 'Phone'] = str(new_phone)
+                            df.loc[df['ID'] == row['ID'], 'Property'] = str(new_property)
+                            df.loc[df['ID'] == row['ID'], 'Property_Type'] = str(new_property_type)
+                            df.loc[df['ID'] == row['ID'], 'Unit'] = str(new_unit)
+                            df.loc[df['ID'] == row['ID'], 'Rent'] = float(new_rent)
+                            df.loc[df['ID'] == row['ID'], 'Status'] = str(new_status)
+                            df.loc[df['ID'] == row['ID'], 'Move_In_Date'] = new_move_in.strftime('%Y-%m-%d')
+                            
+                            # Assign back to session state
+                            st.session_state.tenants = df
+                            
+                            if old_property:
+                                update_property_occupancy(old_property)
+                            if new_property:
+                                update_property_occupancy(new_property)
+                            
+                            save_all_data()
+                            st.session_state[f"editing_tenant_{row['ID']}"] = False
+                            st.success("✅ Tenant updated successfully!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error saving: {str(e)}")
                 
                 with col_f:
                     if st.button("❌ Cancel", key=f"cancel_edit_{row['ID']}", use_container_width=True):
@@ -2018,16 +2043,20 @@ def show_properties():
                 col_c, col_d = st.columns(2)
                 with col_c:
                     if st.button("💾 Save", key=f"save_prop_{row['ID']}", use_container_width=True):
-                        st.session_state.properties.loc[st.session_state.properties['ID'] == row['ID'], 'Address'] = str(new_address)
-                        st.session_state.properties.loc[st.session_state.properties['ID'] == row['ID'], 'City'] = str(new_city)
-                        st.session_state.properties.loc[st.session_state.properties['ID'] == row['ID'], 'Type'] = str(new_type)
-                        st.session_state.properties.loc[st.session_state.properties['ID'] == row['ID'], 'Units'] = int(new_units)
-                        st.session_state.properties = st.session_state.properties
-                        update_all_occupancy()
-                        save_all_data()
-                        st.session_state[f"editing_prop_{row['ID']}"] = False
-                        st.success("✅ Property updated!")
-                        st.rerun()
+                        try:
+                            df = st.session_state.properties.copy()
+                            df.loc[df['ID'] == row['ID'], 'Address'] = str(new_address)
+                            df.loc[df['ID'] == row['ID'], 'City'] = str(new_city)
+                            df.loc[df['ID'] == row['ID'], 'Type'] = str(new_type)
+                            df.loc[df['ID'] == row['ID'], 'Units'] = int(new_units)
+                            st.session_state.properties = df
+                            update_all_occupancy()
+                            save_all_data()
+                            st.session_state[f"editing_prop_{row['ID']}"] = False
+                            st.success("✅ Property updated!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error saving: {str(e)}")
                 
                 with col_d:
                     if st.button("❌ Cancel", key=f"cancel_edit_prop_{row['ID']}", use_container_width=True):
@@ -2158,15 +2187,20 @@ def show_maintenance():
                 col_c, col_d = st.columns(2)
                 with col_c:
                     if st.button("💾 Save", key=f"save_maint_{row['ID']}", use_container_width=True):
-                        st.session_state.maintenance.loc[st.session_state.maintenance['ID'] == row['ID'], 'Unit'] = str(new_unit)
-                        st.session_state.maintenance.loc[st.session_state.maintenance['ID'] == row['ID'], 'Tenant'] = str(new_tenant)
-                        st.session_state.maintenance.loc[st.session_state.maintenance['ID'] == row['ID'], 'Issue'] = str(new_issue)
-                        st.session_state.maintenance.loc[st.session_state.maintenance['ID'] == row['ID'], 'Status'] = str(new_status)
-                        st.session_state.maintenance.loc[st.session_state.maintenance['ID'] == row['ID'], 'Priority'] = str(new_priority)
-                        save_all_data()
-                        st.session_state[f"editing_maint_{row['ID']}"] = False
-                        st.success("✅ Maintenance updated!")
-                        st.rerun()
+                        try:
+                            df = st.session_state.maintenance.copy()
+                            df.loc[df['ID'] == row['ID'], 'Unit'] = str(new_unit)
+                            df.loc[df['ID'] == row['ID'], 'Tenant'] = str(new_tenant)
+                            df.loc[df['ID'] == row['ID'], 'Issue'] = str(new_issue)
+                            df.loc[df['ID'] == row['ID'], 'Status'] = str(new_status)
+                            df.loc[df['ID'] == row['ID'], 'Priority'] = str(new_priority)
+                            st.session_state.maintenance = df
+                            save_all_data()
+                            st.session_state[f"editing_maint_{row['ID']}"] = False
+                            st.success("✅ Maintenance updated!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error saving: {str(e)}")
                 
                 with col_d:
                     if st.button("❌ Cancel", key=f"cancel_maint_{row['ID']}", use_container_width=True):
@@ -2337,12 +2371,14 @@ def show_payments():
                 with col_c:
                     if st.button("💾 Save", key=f"save_payment_{row['ID']}", use_container_width=True):
                         try:
-                            st.session_state.payments.loc[st.session_state.payments['ID'] == row['ID'], 'Tenant'] = str(new_tenant)
-                            st.session_state.payments.loc[st.session_state.payments['ID'] == row['ID'], 'Unit'] = str(new_unit)
-                            st.session_state.payments.loc[st.session_state.payments['ID'] == row['ID'], 'Amount'] = float(new_amount)
-                            st.session_state.payments.loc[st.session_state.payments['ID'] == row['ID'], 'Status'] = str(new_status)
+                            df = st.session_state.payments.copy()
+                            df.loc[df['ID'] == row['ID'], 'Tenant'] = str(new_tenant)
+                            df.loc[df['ID'] == row['ID'], 'Unit'] = str(new_unit)
+                            df.loc[df['ID'] == row['ID'], 'Amount'] = float(new_amount)
+                            df.loc[df['ID'] == row['ID'], 'Status'] = str(new_status)
                             if new_status == "Paid":
-                                st.session_state.payments.loc[st.session_state.payments['ID'] == row['ID'], 'Payment_Time'] = str(new_payment_time)
+                                df.loc[df['ID'] == row['ID'], 'Payment_Time'] = str(new_payment_time)
+                            st.session_state.payments = df
                             save_all_data()
                             st.session_state[f"editing_payment_{row['ID']}"] = False
                             st.success("✅ Payment updated!")
