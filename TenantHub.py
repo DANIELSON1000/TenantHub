@@ -203,11 +203,11 @@ def generate_full_report_text():
     report.append("TENANTS:")
     report.append("-" * 80)
     if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
-        report.append(f"{'Name':<20} {'Property':<20} {'Type':<18} {'Unit':<10} {'Rent':<15} {'Status':<12} {'Move-In':<12}")
+        report.append(f"{'Name':<20} {'Property':<20} {'Type':<22} {'Unit':<10} {'Rent':<15} {'Status':<12} {'Move-In':<12}")
         report.append("-" * 80)
         for _, tenant in st.session_state.tenants.iterrows():
             prop_type = tenant.get('Property_Type', 'N/A')
-            report.append(f"{tenant['Name']:<20} {tenant.get('Property', 'N/A'):<20} {prop_type:<18} {tenant['Unit']:<10} {format_currency(tenant['Rent']):<15} {tenant['Status']:<12} {tenant['Move_In_Date']:<12}")
+            report.append(f"{tenant['Name']:<20} {tenant.get('Property', 'N/A'):<20} {prop_type:<22} {tenant['Unit']:<10} {format_currency(tenant['Rent']):<15} {tenant['Status']:<12} {tenant['Move_In_Date']:<12}")
     else:
         report.append("  No tenants found")
     report.append("")
@@ -1062,7 +1062,6 @@ def mark_payment_as_paid(payment_id):
             df = st.session_state.payments
             idx = df[df['ID'] == payment_id].index
             if not idx.empty:
-                # Update using .at for safer assignment
                 df.at[idx[0], 'Status'] = 'Paid'
                 df.at[idx[0], 'Payment_Time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 st.session_state.payments = df
@@ -1528,37 +1527,57 @@ def show_tenants():
                 phone = st.text_input("Phone", placeholder="(555) 123-4567", key="tenant_phone")
             
             with col_b:
-                # Property selection with type
+                # Property selection with type - FIXED
                 available_props = get_available_properties()
                 if available_props:
-                    prop_options = [f"{p['address']} ({p['type']}) - {p['available_units']} units available" for p in available_props]
-                    selected_prop = st.selectbox("Select Property", prop_options, key="tenant_property")
-                    property_name = selected_prop.split(" (")[0] if selected_prop else ""
+                    # Create display options with property type
+                    prop_options = []
+                    prop_addresses = []
+                    prop_types = []
                     
-                    # Get property type
-                    property_data = st.session_state.properties[st.session_state.properties['Address'] == property_name]
-                    property_type = property_data.iloc[0]['Type'] if not property_data.empty else ""
+                    for p in available_props:
+                        display_text = f"{p['address']} ({p['type']}) - {p['available_units']} units available"
+                        prop_options.append(display_text)
+                        prop_addresses.append(p['address'])
+                        prop_types.append(p['type'])
                     
-                    if not property_data.empty:
-                        max_units = property_data.iloc[0]['Units']
-                        unit_options = [f"Unit {i+1}" for i in range(max_units)]
-                        if 'Property' in st.session_state.tenants.columns:
-                            occupied_units = st.session_state.tenants[
-                                (st.session_state.tenants['Property'] == property_name) & 
-                                (st.session_state.tenants['Status'] == 'Active')
-                            ]['Unit'].tolist()
+                    selected_index = st.selectbox(
+                        "Select Property", 
+                        range(len(prop_options)),
+                        format_func=lambda i: prop_options[i],
+                        key="tenant_property_index"
+                    )
+                    
+                    property_name = prop_addresses[selected_index] if selected_index is not None else ""
+                    property_type = prop_types[selected_index] if selected_index is not None else ""
+                    
+                    # Get available units for this property
+                    if property_name:
+                        property_data = st.session_state.properties[st.session_state.properties['Address'] == property_name]
+                        if not property_data.empty:
+                            max_units = property_data.iloc[0]['Units']
+                            unit_options = [f"Unit {i+1}" for i in range(max_units)]
+                            
+                            # Get occupied units
+                            if 'Property' in st.session_state.tenants.columns:
+                                occupied_units = st.session_state.tenants[
+                                    (st.session_state.tenants['Property'] == property_name) & 
+                                    (st.session_state.tenants['Status'] == 'Active')
+                                ]['Unit'].tolist()
+                            else:
+                                occupied_units = []
+                            
+                            available_units = [u for u in unit_options if u not in occupied_units]
+                            
+                            if available_units:
+                                unit = st.selectbox("Select Unit", available_units, key="tenant_unit")
+                            else:
+                                st.warning("⚠️ No available units in this property!")
+                                unit = ""
                         else:
-                            occupied_units = []
-                        available_units = [u for u in unit_options if u not in occupied_units]
-                        
-                        if available_units:
-                            unit = st.selectbox("Select Unit", available_units, key="tenant_unit")
-                        else:
-                            st.warning("⚠️ No available units in this property!")
-                            unit = ""
+                            unit = st.text_input("Unit Number", placeholder="3B", key="tenant_unit_input")
                     else:
                         unit = st.text_input("Unit Number", placeholder="3B", key="tenant_unit_input")
-                        property_type = ""
                 else:
                     st.warning("⚠️ No properties with available units! Please add a property first.")
                     property_name = ""
@@ -1575,6 +1594,8 @@ def show_tenants():
                 if st.button("💾 Add Tenant", key="add_tenant_btn"):
                     if name and unit and rent > 0 and property_name:
                         new_id = len(st.session_state.tenants) + 1
+                        
+                        # Ensure columns exist
                         if 'Property' not in st.session_state.tenants.columns:
                             st.session_state.tenants['Property'] = ''
                         if 'Property_Type' not in st.session_state.tenants.columns:
