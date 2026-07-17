@@ -72,11 +72,9 @@ def load_data_from_csv(filename, default_df):
                 if 'Occupancy' in df.columns:
                     df['Occupancy'] = pd.to_numeric(df['Occupancy'], errors='coerce').fillna(0).astype('int64')
                 if 'Hygiene_Fee' in df.columns:
-                    df['Hygiene_Fee'] = pd.to_numeric(df['Hygiene_Fee'], errors='coerce').fillna(1000.0)
-                if 'Total_Amount' in df.columns:
-                    df['Total_Amount'] = pd.to_numeric(df['Total_Amount'], errors='coerce').fillna(df['Amount'] + 1000.0)
+                    df['Hygiene_Fee'] = pd.to_numeric(df['Hygiene_Fee'], errors='coerce').fillna(0)
                 # Convert string columns
-                string_columns = ['Name', 'Email', 'Phone', 'Property', 'Property_Type', 'Property_ID', 'Unit', 'Status', 'Move_In_Date', 'Address', 'City', 'Type', 'Issue', 'Priority', 'Reported', 'Tenant', 'Due_Date', 'Payment_Time']
+                string_columns = ['Name', 'Email', 'Phone', 'Property', 'Property_Type', 'Property_ID', 'Unit', 'Status', 'Move_In_Date', 'Address', 'City', 'Type', 'Issue', 'Priority', 'Reported', 'Tenant', 'Due_Date', 'Payment_Time', 'Payment_Type']
                 for col in string_columns:
                     if col in df.columns:
                         df[col] = df[col].fillna('').astype(str)
@@ -124,14 +122,14 @@ def load_all_data():
         if 'payments' not in st.session_state or st.session_state.payments.empty:
             st.session_state.payments = load_data_from_csv('payments.csv', get_default_payments())
         
-        # Ensure Payment_Time column exists in payments
+        # Ensure columns exist in payments
         if 'payments' in st.session_state and isinstance(st.session_state.payments, pd.DataFrame):
             if 'Payment_Time' not in st.session_state.payments.columns:
                 st.session_state.payments['Payment_Time'] = ''
+            if 'Payment_Type' not in st.session_state.payments.columns:
+                st.session_state.payments['Payment_Type'] = 'Rent'
             if 'Hygiene_Fee' not in st.session_state.payments.columns:
-                st.session_state.payments['Hygiene_Fee'] = 1000.0
-            if 'Total_Amount' not in st.session_state.payments.columns:
-                st.session_state.payments['Total_Amount'] = st.session_state.payments['Amount'] + 1000.0
+                st.session_state.payments['Hygiene_Fee'] = 0
         
         # Ensure Property columns exist in tenants
         if 'tenants' in st.session_state and isinstance(st.session_state.tenants, pd.DataFrame):
@@ -258,30 +256,34 @@ def generate_full_report_text():
         report.append("  No properties found")
     report.append("")
     
-    # Payments Table with Hygiene Fee
+    # Payments Table with separate Rent and Hygiene rows
     report.append("PAYMENTS:")
     report.append("-" * 80)
     if isinstance(st.session_state.payments, pd.DataFrame) and not st.session_state.payments.empty:
-        if 'Total_Amount' in st.session_state.payments.columns:
-            total_paid = st.session_state.payments[st.session_state.payments['Status'] == 'Paid']['Total_Amount'].sum()
-            total_pending = st.session_state.payments[st.session_state.payments['Status'] == 'Pending']['Total_Amount'].sum()
-        else:
-            total_paid = st.session_state.payments[st.session_state.payments['Status'] == 'Paid']['Amount'].sum()
-            total_pending = st.session_state.payments[st.session_state.payments['Status'] == 'Pending']['Amount'].sum()
-        report.append(f"  Total Collected: {format_currency(total_paid)}")
-        report.append(f"  Total Pending: {format_currency(total_pending)}")
+        # Separate rent and hygiene payments
+        rent_payments = st.session_state.payments[st.session_state.payments['Payment_Type'] == 'Rent']
+        hygiene_payments = st.session_state.payments[st.session_state.payments['Payment_Type'] == 'Hygiene']
+        
+        total_rent_collected = rent_payments[rent_payments['Status'] == 'Paid']['Amount'].sum() if not rent_payments.empty else 0
+        total_hygiene_collected = hygiene_payments[hygiene_payments['Status'] == 'Paid']['Amount'].sum() if not hygiene_payments.empty else 0
+        total_rent_pending = rent_payments[rent_payments['Status'] == 'Pending']['Amount'].sum() if not rent_payments.empty else 0
+        total_hygiene_pending = hygiene_payments[hygiene_payments['Status'] == 'Pending']['Amount'].sum() if not hygiene_payments.empty else 0
+        
+        report.append(f"  Total Rent Collected: {format_currency(total_rent_collected)}")
+        report.append(f"  Total Hygiene Collected: {format_currency(total_hygiene_collected)}")
+        report.append(f"  Total Rent Pending: {format_currency(total_rent_pending)}")
+        report.append(f"  Total Hygiene Pending: {format_currency(total_hygiene_pending)}")
         report.append("")
-        report.append(f"{'Tenant':<20} {'Unit':<8} {'Rent':<12} {'Hygiene':<12} {'Total':<15} {'Due Date':<12} {'Status':<12} {'Payment Time':<20}")
+        report.append(f"{'Tenant':<20} {'Unit':<8} {'Type':<10} {'Amount':<15} {'Due Date':<12} {'Status':<12} {'Payment Time':<20}")
         report.append("-" * 80)
         for _, payment in st.session_state.payments.iterrows():
             payment_time = payment.get('Payment_Time', 'Not paid')
-            hygiene_fee = payment.get('Hygiene_Fee', 0)
-            total = payment.get('Total_Amount', payment['Amount'] + hygiene_fee)
+            payment_type = payment.get('Payment_Type', 'Rent')
             if payment['Status'] == 'Paid':
                 status_display = "✅ PAID"
             else:
                 status_display = "⏳ PENDING"
-            report.append(f"{payment['Tenant']:<20} {payment['Unit']:<8} {format_currency(payment['Amount']):<12} {format_currency(hygiene_fee):<12} {format_currency(total):<15} {payment['Due_Date']:<12} {status_display:<12} {payment_time:<20}")
+            report.append(f"{payment['Tenant']:<20} {payment['Unit']:<8} {payment_type:<10} {format_currency(payment['Amount']):<15} {payment['Due_Date']:<12} {status_display:<12} {payment_time:<20}")
     else:
         report.append("  No payments recorded")
     report.append("")
@@ -344,6 +346,8 @@ def generate_full_report_html():
             .status-paid { color: #27AE60; font-weight: bold; }
             .status-pending { color: #F39C12; font-weight: bold; }
             .status-overdue { color: #E74C3C; font-weight: bold; }
+            .type-rent { color: #1B3A7A; font-weight: bold; }
+            .type-hygiene { color: #27AE60; font-weight: bold; }
         </style>
     </head>
     <body>
@@ -423,30 +427,32 @@ def generate_full_report_html():
     else:
         html += "<p>No properties found</p>"
     
-    # Payments Table with Hygiene Fee
+    # Payments Table with separate Rent and Hygiene rows
     html += """
         <h2>💰 Payments</h2>
     """
     if isinstance(st.session_state.payments, pd.DataFrame) and not st.session_state.payments.empty:
-        if 'Total_Amount' in st.session_state.payments.columns:
-            total_paid = st.session_state.payments[st.session_state.payments['Status'] == 'Paid']['Total_Amount'].sum()
-            total_pending = st.session_state.payments[st.session_state.payments['Status'] == 'Pending']['Total_Amount'].sum()
-        else:
-            total_paid = st.session_state.payments[st.session_state.payments['Status'] == 'Paid']['Amount'].sum()
-            total_pending = st.session_state.payments[st.session_state.payments['Status'] == 'Pending']['Amount'].sum()
+        rent_payments = st.session_state.payments[st.session_state.payments['Payment_Type'] == 'Rent']
+        hygiene_payments = st.session_state.payments[st.session_state.payments['Payment_Type'] == 'Hygiene']
+        
+        total_rent_collected = rent_payments[rent_payments['Status'] == 'Paid']['Amount'].sum() if not rent_payments.empty else 0
+        total_hygiene_collected = hygiene_payments[hygiene_payments['Status'] == 'Paid']['Amount'].sum() if not hygiene_payments.empty else 0
+        total_rent_pending = rent_payments[rent_payments['Status'] == 'Pending']['Amount'].sum() if not rent_payments.empty else 0
+        total_hygiene_pending = hygiene_payments[hygiene_payments['Status'] == 'Pending']['Amount'].sum() if not hygiene_payments.empty else 0
+        
         html += f"""
         <div class="summary">
-            <strong>Total Collected:</strong> {format_currency(total_paid)} &nbsp;|&nbsp;
-            <strong>Total Pending:</strong> {format_currency(total_pending)} &nbsp;|&nbsp;
-            <strong>Total Records:</strong> {len(st.session_state.payments)}
+            <strong>Rent Collected:</strong> {format_currency(total_rent_collected)} &nbsp;|&nbsp;
+            <strong>Hygiene Collected:</strong> {format_currency(total_hygiene_collected)} &nbsp;|&nbsp;
+            <strong>Rent Pending:</strong> {format_currency(total_rent_pending)} &nbsp;|&nbsp;
+            <strong>Hygiene Pending:</strong> {format_currency(total_hygiene_pending)}
         </div>
         <table>
             <tr>
                 <th>Tenant</th>
                 <th>Unit</th>
-                <th>Rent</th>
-                <th>Hygiene Fee</th>
-                <th>Total</th>
+                <th>Type</th>
+                <th>Amount</th>
                 <th>Due Date</th>
                 <th>Status</th>
                 <th>Payment Time</th>
@@ -454,16 +460,15 @@ def generate_full_report_html():
         """
         for _, payment in st.session_state.payments.iterrows():
             payment_time = payment.get('Payment_Time', 'Not paid')
-            hygiene_fee = payment.get('Hygiene_Fee', 0)
-            total = payment.get('Total_Amount', payment['Amount'] + hygiene_fee)
+            payment_type = payment.get('Payment_Type', 'Rent')
+            type_class = "type-rent" if payment_type == "Rent" else "type-hygiene"
             status_class = payment['Status'].lower()
             html += f"""
             <tr>
                 <td>{payment['Tenant']}</td>
                 <td>{payment['Unit']}</td>
+                <td><span class="{type_class}">{payment_type}</span></td>
                 <td>{format_currency(payment['Amount'])}</td>
-                <td>{format_currency(hygiene_fee)}</td>
-                <td><strong>{format_currency(total)}</strong></td>
                 <td>{payment['Due_Date']}</td>
                 <td><span class="status-{status_class}">{payment['Status']}</span></td>
                 <td>{payment_time}</td>
@@ -597,6 +602,8 @@ def send_tenant_info_email(tenant_name, email):
                         border: 1px solid #ddd;
                     }}
                     tr:nth-child(even) {{ background-color: #f2f2f2; }}
+                    .type-rent {{ color: #1B3A7A; font-weight: bold; }}
+                    .type-hygiene {{ color: #27AE60; font-weight: bold; }}
                 </style>
             </head>
             <body>
@@ -611,7 +618,6 @@ def send_tenant_info_email(tenant_name, email):
                     <tr><td><strong>Status:</strong></td><td>{tenant_data['Status']}</td></tr>
                     <tr><td><strong>Monthly Rent:</strong></td><td>{format_currency(tenant_data['Rent'])}</td></tr>
                     <tr><td><strong>Hygiene Fee:</strong></td><td>{format_currency(tenant_data.get('Hygiene_Fee', 1000.0))}</td></tr>
-                    <tr><td><strong>Total Monthly:</strong></td><td>{format_currency(tenant_data['Rent'] + tenant_data.get('Hygiene_Fee', 1000.0))}</td></tr>
                     <tr><td><strong>Move-in Date:</strong></td><td>{tenant_data['Move_In_Date']}</td></tr>
                 </table>
                 
@@ -624,24 +630,22 @@ def send_tenant_info_email(tenant_name, email):
                     html += """
                     <table>
                         <tr>
+                            <th>Type</th>
+                            <th>Amount</th>
                             <th>Due Date</th>
-                            <th>Rent</th>
-                            <th>Hygiene</th>
-                            <th>Total</th>
                             <th>Status</th>
                             <th>Payment Time</th>
                         </tr>
                     """
                     for _, payment in payments.iterrows():
                         payment_time = payment.get('Payment_Time', 'Not paid')
-                        hygiene_fee = payment.get('Hygiene_Fee', 0)
-                        total = payment.get('Total_Amount', payment['Amount'] + hygiene_fee)
+                        payment_type = payment.get('Payment_Type', 'Rent')
+                        type_class = "type-rent" if payment_type == "Rent" else "type-hygiene"
                         html += f"""
                         <tr>
-                            <td>{payment['Due_Date']}</td>
+                            <td><span class="{type_class}">{payment_type}</span></td>
                             <td>{format_currency(payment['Amount'])}</td>
-                            <td>{format_currency(hygiene_fee)}</td>
-                            <td><strong>{format_currency(total)}</strong></td>
+                            <td>{payment['Due_Date']}</td>
                             <td>{payment['Status']}</td>
                             <td>{payment_time}</td>
                         </tr>
@@ -947,8 +951,8 @@ def get_default_maintenance():
     return pd.DataFrame(columns=['ID', 'Unit', 'Issue', 'Status', 'Priority', 'Reported', 'Tenant'])
 
 def get_default_payments():
-    """Return empty dataframe with correct columns - includes Payment_Time and Hygiene Fee fields"""
-    return pd.DataFrame(columns=['ID', 'Tenant', 'Unit', 'Amount', 'Due_Date', 'Status', 'Payment_Time', 'Hygiene_Fee', 'Total_Amount'])
+    """Return empty dataframe with correct columns - includes Payment_Type for Rent/Hygiene separation"""
+    return pd.DataFrame(columns=['ID', 'Tenant', 'Unit', 'Amount', 'Due_Date', 'Status', 'Payment_Time', 'Payment_Type', 'Hygiene_Fee'])
 
 def init_data():
     """Initialize data from CSV files if they exist, otherwise use defaults"""
@@ -1100,20 +1104,22 @@ def check_payment_reminders():
                         reminders.append({
                             'tenant': row['Tenant'],
                             'unit': row['Unit'],
-                            'amount': row.get('Total_Amount', row['Amount']),
+                            'amount': row['Amount'],
                             'due_date': row['Due_Date'],
                             'days': days_until,
-                            'urgent': days_until <= 3
+                            'urgent': days_until <= 3,
+                            'type': row.get('Payment_Type', 'Rent')
                         })
                     elif days_until < 0:
                         reminders.append({
                             'tenant': row['Tenant'],
                             'unit': row['Unit'],
-                            'amount': row.get('Total_Amount', row['Amount']),
+                            'amount': row['Amount'],
                             'due_date': row['Due_Date'],
                             'days': days_until,
                             'urgent': True,
-                            'overdue': True
+                            'overdue': True,
+                            'type': row.get('Payment_Type', 'Rent')
                         })
                 except:
                     continue
@@ -1158,25 +1164,35 @@ def generate_next_payment_date(move_in_date):
         return None
 
 def auto_generate_payments():
-    """Automatically generate payment records for all active tenants"""
+    """Automatically generate payment records for all active tenants - separate Rent and Hygiene"""
     if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
         new_payments_added = 0
         
         for _, tenant in st.session_state.tenants.iterrows():
             if tenant['Status'] == 'Active':
                 current_month = datetime.now().strftime('%Y-%m')
-                existing_payment = st.session_state.payments[
-                    (st.session_state.payments['Tenant'] == tenant['Name']) & 
-                    (st.session_state.payments['Due_Date'].str[:7] == current_month)
-                ]
                 
-                if existing_payment.empty:
-                    next_due = generate_next_payment_date(tenant['Move_In_Date'])
-                    if next_due:
-                        rent_value = float(tenant['Rent']) if pd.notna(tenant['Rent']) else 0.0
-                        hygiene_fee = float(tenant.get('Hygiene_Fee', 1000.0)) if pd.notna(tenant.get('Hygiene_Fee', 1000.0)) else 1000.0
-                        total_amount = rent_value + hygiene_fee
-                        
+                # Check if rent payment exists for this month
+                rent_exists = st.session_state.payments[
+                    (st.session_state.payments['Tenant'] == tenant['Name']) & 
+                    (st.session_state.payments['Due_Date'].str[:7] == current_month) &
+                    (st.session_state.payments['Payment_Type'] == 'Rent')
+                ].empty
+                
+                # Check if hygiene payment exists for this month
+                hygiene_exists = st.session_state.payments[
+                    (st.session_state.payments['Tenant'] == tenant['Name']) & 
+                    (st.session_state.payments['Due_Date'].str[:7] == current_month) &
+                    (st.session_state.payments['Payment_Type'] == 'Hygiene')
+                ].empty
+                
+                next_due = generate_next_payment_date(tenant['Move_In_Date'])
+                if next_due:
+                    rent_value = float(tenant['Rent']) if pd.notna(tenant['Rent']) else 0.0
+                    hygiene_fee = float(tenant.get('Hygiene_Fee', 1000.0)) if pd.notna(tenant.get('Hygiene_Fee', 1000.0)) else 1000.0
+                    
+                    # Create Rent payment
+                    if rent_exists and rent_value > 0:
                         new_payment = pd.DataFrame({
                             'ID': [len(st.session_state.payments) + 1],
                             'Tenant': [tenant['Name']],
@@ -1185,15 +1201,31 @@ def auto_generate_payments():
                             'Due_Date': [next_due],
                             'Status': ['Pending'],
                             'Payment_Time': [''],
-                            'Hygiene_Fee': [hygiene_fee],
-                            'Total_Amount': [total_amount]
+                            'Payment_Type': ['Rent'],
+                            'Hygiene_Fee': [0]
+                        })
+                        st.session_state.payments = pd.concat([st.session_state.payments, new_payment], ignore_index=True)
+                        new_payments_added += 1
+                    
+                    # Create Hygiene payment
+                    if hygiene_exists and hygiene_fee > 0:
+                        new_payment = pd.DataFrame({
+                            'ID': [len(st.session_state.payments) + 1],
+                            'Tenant': [tenant['Name']],
+                            'Unit': [tenant['Unit']],
+                            'Amount': [hygiene_fee],
+                            'Due_Date': [next_due],
+                            'Status': ['Pending'],
+                            'Payment_Time': [''],
+                            'Payment_Type': ['Hygiene'],
+                            'Hygiene_Fee': [hygiene_fee]
                         })
                         st.session_state.payments = pd.concat([st.session_state.payments, new_payment], ignore_index=True)
                         new_payments_added += 1
         
         if new_payments_added > 0:
             save_all_data()
-            st.success(f"✅ Auto-generated {new_payments_added} new payment{'s' if new_payments_added > 1 else ''} for this month with Hygiene Fee!")
+            st.success(f"✅ Auto-generated {new_payments_added} new payment records for this month (Rent + Hygiene separated)!")
         elif len(st.session_state.tenants) > 0:
             st.info("No new payments needed this month.")
         
@@ -1204,13 +1236,11 @@ def mark_payment_as_paid(payment_id):
     """Mark a payment as paid and record the timestamp"""
     try:
         if isinstance(st.session_state.payments, pd.DataFrame) and not st.session_state.payments.empty:
-            # Ensure Payment_Time column exists
+            # Ensure columns exist
             if 'Payment_Time' not in st.session_state.payments.columns:
                 st.session_state.payments['Payment_Time'] = ''
-            if 'Hygiene_Fee' not in st.session_state.payments.columns:
-                st.session_state.payments['Hygiene_Fee'] = 1000.0
-            if 'Total_Amount' not in st.session_state.payments.columns:
-                st.session_state.payments['Total_Amount'] = st.session_state.payments['Amount'] + 1000.0
+            if 'Payment_Type' not in st.session_state.payments.columns:
+                st.session_state.payments['Payment_Type'] = 'Rent'
             
             df = st.session_state.payments
             idx = df[df['ID'] == payment_id].index
@@ -1284,16 +1314,21 @@ def generate_agreement_pdf(tenant_name, property_name, property_type, unit, rent
             story.append(Paragraph(f"Property Type: {property_type}", styles['CustomBody']))
             story.append(Paragraph(f"Unit: {unit}", styles['CustomBody']))
             story.append(Paragraph(f"Monthly Rent: {format_currency(rent)}", styles['CustomBody']))
-            story.append(Paragraph(f"Hygiene Fee: {format_currency(1000.0)}", styles['CustomBody']))
-            story.append(Paragraph(f"Total Monthly Payment: {format_currency(rent + 1000.0)}", styles['CustomBody']))
+            story.append(Paragraph(f"Hygiene Fee: {format_currency(1000.0)} (separate payment)", styles['CustomBody']))
             story.append(Paragraph(f"Move-in Date: {move_in_date}", styles['CustomBody']))
+            story.append(Spacer(1, 0.25*inch))
+            
+            story.append(Paragraph("PAYMENT TERMS", styles['CustomHeading']))
+            story.append(Paragraph("Rent and Hygiene Fee are collected as separate payments:", styles['CustomBody']))
+            story.append(Paragraph(f"1. Rent Payment: {format_currency(rent)} per month", styles['CustomBody']))
+            story.append(Paragraph(f"2. Hygiene Fee: {format_currency(1000.0)} per month (for property maintenance and cleaning)", styles['CustomBody']))
             story.append(Spacer(1, 0.25*inch))
             
             story.append(Paragraph("TERMS AND CONDITIONS", styles['CustomHeading']))
             
             terms = [
-                "1. RENT PAYMENT: Tenant agrees to pay the monthly rent on or before the 1st day of each month. Rent is due on the same day each month as the move-in date.",
-                "2. HYGIENE FEE: A hygiene fee of RWF 1,000 is included in the monthly payment for property maintenance and cleaning services.",
+                "1. RENT PAYMENT: Tenant agrees to pay the monthly rent on or before the 1st day of each month.",
+                "2. HYGIENE FEE: A hygiene fee of RWF 1,000 is payable separately each month for property maintenance.",
                 "3. LATE PAYMENT: A late fee of RWF 50,000 will be charged if rent is not received within 5 days after the due date.",
                 "4. SECURITY DEPOSIT: A security deposit equal to one month's rent is required and will be held by Landlord.",
                 "5. UTILITIES: Tenant is responsible for all utility costs including electricity, water, gas, and internet.",
@@ -1364,18 +1399,22 @@ def generate_text_agreement(tenant_name, property_name, property_type, unit, ren
     Property Type: {property_type}
     Unit: {unit}
     Monthly Rent: {format_currency(rent)}
-    Hygiene Fee: {format_currency(1000.0)}
-    Total Monthly Payment: {format_currency(rent + 1000.0)}
+    Hygiene Fee: {format_currency(1000.0)} (separate payment)
     Move-in Date: {move_in_date}
+    
+    PAYMENT TERMS
+    -------------
+    Rent and Hygiene Fee are collected as separate payments:
+    1. Rent Payment: {format_currency(rent)} per month
+    2. Hygiene Fee: {format_currency(1000.0)} per month (for property maintenance and cleaning)
     
     TERMS AND CONDITIONS
     --------------------
     1. RENT PAYMENT: Tenant agrees to pay the monthly rent on or before the 
-       1st day of each month. Rent is due on the same day each month as the 
-       move-in date.
+       1st day of each month.
     
-    2. HYGIENE FEE: A hygiene fee of RWF 1,000 is included in the monthly 
-       payment for property maintenance and cleaning services.
+    2. HYGIENE FEE: A hygiene fee of RWF 1,000 is payable separately each 
+       month for property maintenance.
     
     3. LATE PAYMENT: A late fee of RWF 50,000 will be charged if rent is not 
        received within 5 days after the due date.
@@ -1593,11 +1632,20 @@ def show_metrics():
     total_revenue = tenants_df['Rent'].sum() if isinstance(tenants_df, pd.DataFrame) and not tenants_df.empty else 0
     active_maintenance = len(maintenance_df[maintenance_df['Status'] != 'Completed']) if isinstance(maintenance_df, pd.DataFrame) and not maintenance_df.empty else 0
     
+    # Calculate rent and hygiene collections separately
+    total_rent_collected = 0
+    total_hygiene_collected = 0
     overdue = 0
+    
     if isinstance(payments_df, pd.DataFrame) and not payments_df.empty:
         today = datetime.now().date()
         for _, row in payments_df.iterrows():
-            if row['Status'] != 'Paid':
+            if row['Status'] == 'Paid':
+                if row.get('Payment_Type', 'Rent') == 'Rent':
+                    total_rent_collected += row['Amount']
+                else:
+                    total_hygiene_collected += row['Amount']
+            else:
                 try:
                     due_date = datetime.strptime(row['Due_Date'], '%Y-%m-%d').date()
                     if due_date < today:
@@ -1624,16 +1672,11 @@ def show_metrics():
         """, unsafe_allow_html=True)
     
     with col3:
-        total_with_hygiene = 0
-        if isinstance(tenants_df, pd.DataFrame) and not tenants_df.empty:
-            for _, tenant in tenants_df.iterrows():
-                hygiene = tenant.get('Hygiene_Fee', 1000.0)
-                total_with_hygiene += tenant['Rent'] + hygiene
         st.markdown(f"""
         <div class="dashboard-card purple">
-            <div class="metric-label">💰 Monthly Revenue (incl. Hygiene)</div>
-            <div class="metric-value">{format_currency(total_with_hygiene)}</div>
-            <div style="font-size: 0.85rem; color: #555;">From {total_tenants} tenants</div>
+            <div class="metric-label">💰 Rent Collected</div>
+            <div class="metric-value">{format_currency(total_rent_collected)}</div>
+            <div style="font-size: 0.85rem; color: #555;">Hygiene: {format_currency(total_hygiene_collected)}</div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -1653,13 +1696,14 @@ def show_reminders():
     if reminders:
         st.markdown("### 🔔 Payment Reminders")
         for reminder in reminders:
+            type_emoji = "💰" if reminder['type'] == 'Rent' else "🧹"
             if reminder.get('overdue', False):
                 st.markdown(f"""
                 <div class="reminder-card urgent">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <div>
                             <strong>⚠️ OVERDUE</strong> - {reminder['tenant']} (Unit {reminder['unit']})
-                            <br>Amount: {format_currency(reminder['amount'])} - Due: {reminder['due_date']}
+                            <br>{type_emoji} {reminder['type']}: {format_currency(reminder['amount'])} - Due: {reminder['due_date']}
                             <br><span style="color: #E74C3C;">Payment is {abs(reminder['days'])} days overdue!</span>
                         </div>
                     </div>
@@ -1672,7 +1716,7 @@ def show_reminders():
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <div>
                             <strong>⏰ Payment Due Soon</strong> - {reminder['tenant']} (Unit {reminder['unit']})
-                            <br>Amount: {format_currency(reminder['amount'])} - Due: {reminder['due_date']}
+                            <br>{type_emoji} {reminder['type']}: {format_currency(reminder['amount'])} - Due: {reminder['due_date']}
                             <br>⏳ {reminder['days']} days remaining
                         </div>
                     </div>
@@ -2008,10 +2052,12 @@ def show_payments():
                     rent = 0
                     hygiene_fee = 1000.0
                 
-                amount = st.number_input("Rent Amount (RWF)", value=float(rent) if rent > 0 else 0.0, min_value=0.0, step=5000.0, key="payment_amount")
-                hygiene_amount = st.number_input("Hygiene Fee (RWF)", value=float(hygiene_fee) if hygiene_fee > 0 else 1000.0, min_value=0.0, step=500.0, key="payment_hygiene")
-                total_amount = amount + hygiene_amount
-                st.info(f"💰 Total Amount: {format_currency(total_amount)}")
+                payment_type = st.selectbox("Payment Type", ["Rent", "Hygiene"], key="payment_type_select")
+                
+                if payment_type == "Rent":
+                    amount = st.number_input("Rent Amount (RWF)", value=float(rent) if rent > 0 else 0.0, min_value=0.0, step=5000.0, key="payment_amount")
+                else:
+                    amount = st.number_input("Hygiene Fee (RWF)", value=float(hygiene_fee) if hygiene_fee > 0 else 1000.0, min_value=0.0, step=500.0, key="payment_hygiene_amount")
             
             with col_b:
                 payment_date = st.date_input("Payment Date", datetime.now(), key="payment_date")
@@ -2032,15 +2078,15 @@ def show_payments():
                         'Due_Date': [payment_date.strftime('%Y-%m-%d')],
                         'Status': [status],
                         'Payment_Time': [payment_time if status == "Paid" else ""],
-                        'Hygiene_Fee': [float(hygiene_amount) if hygiene_amount > 0 else 0.0],
-                        'Total_Amount': [float(amount) + float(hygiene_amount)]
+                        'Payment_Type': [payment_type],
+                        'Hygiene_Fee': [float(amount) if payment_type == "Hygiene" else 0]
                     })
                     st.session_state.payments = pd.concat([st.session_state.payments, new_payment], ignore_index=True)
                     save_all_data()
                     if status == "Paid":
-                        st.success(f"✅ Payment recorded! Paid on: {payment_time} (Total: {format_currency(total_amount)})")
+                        st.success(f"✅ {payment_type} payment recorded! Paid on: {payment_time} ({format_currency(amount)})")
                     else:
-                        st.success(f"✅ Payment recorded! (Total: {format_currency(total_amount)})")
+                        st.success(f"✅ {payment_type} payment recorded! ({format_currency(amount)})")
                     st.rerun()
                 else:
                     st.warning("Please fill in all required fields!")
@@ -2053,24 +2099,31 @@ def show_payments():
             show_email_report_section()
     
     if isinstance(st.session_state.payments, pd.DataFrame) and not st.session_state.payments.empty:
-        if 'Total_Amount' in st.session_state.payments.columns:
-            total_collected = st.session_state.payments[st.session_state.payments['Status'] == 'Paid']['Total_Amount'].sum()
-            total_pending = st.session_state.payments[st.session_state.payments['Status'] == 'Pending']['Total_Amount'].sum()
-        else:
-            total_collected = st.session_state.payments[st.session_state.payments['Status'] == 'Paid']['Amount'].sum()
-            total_pending = st.session_state.payments[st.session_state.payments['Status'] == 'Pending']['Amount'].sum()
+        # Separate rent and hygiene payments
+        rent_payments = st.session_state.payments[st.session_state.payments['Payment_Type'] == 'Rent']
+        hygiene_payments = st.session_state.payments[st.session_state.payments['Payment_Type'] == 'Hygiene']
         
-        col1, col2, col3 = st.columns(3)
+        total_rent_collected = rent_payments[rent_payments['Status'] == 'Paid']['Amount'].sum() if not rent_payments.empty else 0
+        total_hygiene_collected = hygiene_payments[hygiene_payments['Status'] == 'Paid']['Amount'].sum() if not hygiene_payments.empty else 0
+        total_rent_pending = rent_payments[rent_payments['Status'] == 'Pending']['Amount'].sum() if not rent_payments.empty else 0
+        total_hygiene_pending = hygiene_payments[hygiene_payments['Status'] == 'Pending']['Amount'].sum() if not hygiene_payments.empty else 0
+        
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("💰 Total Collected", format_currency(total_collected))
+            st.metric("💰 Rent Collected", format_currency(total_rent_collected))
         with col2:
-            st.metric("⏳ Pending", format_currency(total_pending))
+            st.metric("🧹 Hygiene Collected", format_currency(total_hygiene_collected))
         with col3:
-            st.metric("📊 Total Records", len(st.session_state.payments))
+            st.metric("⏳ Rent Pending", format_currency(total_rent_pending))
+        with col4:
+            st.metric("⏳ Hygiene Pending", format_currency(total_hygiene_pending))
         
+        filter_type = st.selectbox("Filter by type", ["All", "Rent", "Hygiene"], key="payment_type_filter")
         filter_status = st.selectbox("Filter by status", ["All", "Paid", "Pending", "Overdue"], key="payment_filter")
         
         filtered_df = st.session_state.payments.copy()
+        if filter_type != "All":
+            filtered_df = filtered_df[filtered_df['Payment_Type'] == filter_type]
         if filter_status != "All":
             filtered_df = filtered_df[filtered_df['Status'] == filter_status]
         
@@ -2086,16 +2139,12 @@ def show_payments():
                 st.caption(f"Unit {row['Unit']}")
             
             with col2:
-                st.write("Rent:")
-                st.write("Hygiene:")
-                st.write("**Total:**")
+                payment_type = row.get('Payment_Type', 'Rent')
+                type_emoji = "💰" if payment_type == "Rent" else "🧹"
+                st.write(f"{type_emoji} {payment_type}")
             
             with col3:
                 st.write(format_currency(row['Amount']))
-                hygiene_fee = row.get('Hygiene_Fee', 0)
-                st.write(format_currency(hygiene_fee))
-                total = row.get('Total_Amount', row['Amount'] + hygiene_fee)
-                st.write(f"**{format_currency(total)}**")
             
             with col4:
                 st.caption(f"Due: {row['Due_Date']}")
@@ -2129,17 +2178,19 @@ def show_payments():
             # Check if this payment is being edited
             if st.session_state.get(f"editing_payment_{row['ID']}", False):
                 st.markdown('<div class="edit-form">', unsafe_allow_html=True)
-                st.markdown(f"### ✏️ Editing Payment: {row['Tenant']}")
+                st.markdown(f"### ✏️ Editing Payment: {row['Tenant']} - {row.get('Payment_Type', 'Rent')}")
                 
                 col_a, col_b = st.columns(2)
                 
                 with col_a:
                     new_tenant = st.text_input("Tenant", value=row['Tenant'], key=f"edit_pay_tenant_{row['ID']}_{idx}")
                     new_unit = st.text_input("Unit", value=row['Unit'], key=f"edit_pay_unit_{row['ID']}_{idx}")
+                    new_type = st.selectbox("Payment Type", ["Rent", "Hygiene"],
+                                           index=["Rent", "Hygiene"].index(row.get('Payment_Type', 'Rent')) if row.get('Payment_Type', 'Rent') in ["Rent", "Hygiene"] else 0,
+                                           key=f"edit_pay_type_{row['ID']}_{idx}")
                 
                 with col_b:
-                    new_amount = st.number_input("Rent Amount (RWF)", value=float(row['Amount']) if pd.notna(row['Amount']) else 0.0, step=5000.0, key=f"edit_pay_amount_{row['ID']}_{idx}")
-                    new_hygiene = st.number_input("Hygiene Fee (RWF)", value=float(row.get('Hygiene_Fee', 1000.0)) if pd.notna(row.get('Hygiene_Fee', 1000.0)) else 1000.0, step=500.0, key=f"edit_pay_hygiene_{row['ID']}_{idx}")
+                    new_amount = st.number_input("Amount (RWF)", value=float(row['Amount']) if pd.notna(row['Amount']) else 0.0, step=5000.0, key=f"edit_pay_amount_{row['ID']}_{idx}")
                     new_status = st.selectbox("Status", ["Paid", "Pending", "Overdue"],
                                              index=["Paid", "Pending", "Overdue"].index(row['Status']) if row['Status'] in ["Paid", "Pending", "Overdue"] else 0,
                                              key=f"edit_pay_status_{row['ID']}_{idx}")
@@ -2155,9 +2206,8 @@ def show_payments():
                             df = st.session_state.payments.copy()
                             df.loc[df['ID'] == row['ID'], 'Tenant'] = str(new_tenant)
                             df.loc[df['ID'] == row['ID'], 'Unit'] = str(new_unit)
+                            df.loc[df['ID'] == row['ID'], 'Payment_Type'] = str(new_type)
                             df.loc[df['ID'] == row['ID'], 'Amount'] = float(new_amount) if new_amount > 0 else 0.0
-                            df.loc[df['ID'] == row['ID'], 'Hygiene_Fee'] = float(new_hygiene) if new_hygiene > 0 else 0.0
-                            df.loc[df['ID'] == row['ID'], 'Total_Amount'] = float(new_amount) + float(new_hygiene)
                             df.loc[df['ID'] == row['ID'], 'Status'] = str(new_status)
                             if new_status == "Paid":
                                 df.loc[df['ID'] == row['ID'], 'Payment_Time'] = str(new_payment_time)
@@ -2262,7 +2312,8 @@ def show_tenants():
                     unit = st.text_input("Unit Number", placeholder="3B", key="tenant_unit_input")
                 
                 rent = st.number_input("Monthly Rent (RWF)", min_value=0, step=5000, key="tenant_rent")
-                hygiene_fee = st.number_input("Hygiene Fee (RWF)", min_value=0, step=500, value=1000, key="tenant_hygiene_fee")
+                hygiene_fee = st.number_input("Hygiene Fee (RWF) - Separate Payment", min_value=0, step=500, value=1000, key="tenant_hygiene_fee")
+                st.caption("💡 Hygiene Fee is collected separately from rent")
                 status = st.selectbox("Status", ["Active", "Pending", "In Progress", "New"], key="tenant_status")
             
             move_in_date = st.date_input("Move-in Date", datetime.now(), key="tenant_move_in")
@@ -2302,25 +2353,41 @@ def show_tenants():
                         # Update occupancy for the property - pass both name and type
                         update_property_occupancy(property_name, property_type)
                         
-                        # Generate first payment
+                        # Generate first payments - separate Rent and Hygiene
                         next_due = generate_next_payment_date(move_in_date.strftime('%Y-%m-%d'))
                         if next_due:
-                            total_amount = float(rent) + float(hygiene_fee)
-                            new_payment = pd.DataFrame({
-                                'ID': [len(st.session_state.payments) + 1],
-                                'Tenant': [name],
-                                'Unit': [unit],
-                                'Amount': [float(rent) if rent > 0 else 0.0],
-                                'Due_Date': [next_due],
-                                'Status': ['Pending'],
-                                'Payment_Time': [''],
-                                'Hygiene_Fee': [float(hygiene_fee) if hygiene_fee > 0 else 1000.0],
-                                'Total_Amount': [total_amount]
-                            })
-                            st.session_state.payments = pd.concat([st.session_state.payments, new_payment], ignore_index=True)
+                            # Create Rent payment
+                            if rent > 0:
+                                new_payment = pd.DataFrame({
+                                    'ID': [len(st.session_state.payments) + 1],
+                                    'Tenant': [name],
+                                    'Unit': [unit],
+                                    'Amount': [float(rent) if rent > 0 else 0.0],
+                                    'Due_Date': [next_due],
+                                    'Status': ['Pending'],
+                                    'Payment_Time': [''],
+                                    'Payment_Type': ['Rent'],
+                                    'Hygiene_Fee': [0]
+                                })
+                                st.session_state.payments = pd.concat([st.session_state.payments, new_payment], ignore_index=True)
+                            
+                            # Create Hygiene payment
+                            if hygiene_fee > 0:
+                                new_payment = pd.DataFrame({
+                                    'ID': [len(st.session_state.payments) + 1],
+                                    'Tenant': [name],
+                                    'Unit': [unit],
+                                    'Amount': [float(hygiene_fee) if hygiene_fee > 0 else 1000.0],
+                                    'Due_Date': [next_due],
+                                    'Status': ['Pending'],
+                                    'Payment_Time': [''],
+                                    'Payment_Type': ['Hygiene'],
+                                    'Hygiene_Fee': [float(hygiene_fee) if hygiene_fee > 0 else 1000.0]
+                                })
+                                st.session_state.payments = pd.concat([st.session_state.payments, new_payment], ignore_index=True)
                         
                         save_all_data()
-                        st.success(f"✅ Tenant added to {property_name} ({property_type})! Total monthly: {format_currency(float(rent) + float(hygiene_fee))}")
+                        st.success(f"✅ Tenant added to {property_name} ({property_type})! Rent: {format_currency(rent)}, Hygiene: {format_currency(hygiene_fee)} (separate payments)")
                         st.rerun()
                     else:
                         if not property_name:
@@ -2381,8 +2448,7 @@ def show_tenants():
             with col3:
                 st.write(f"Rent: {format_currency(row['Rent'])}")
                 hygiene_fee = row.get('Hygiene_Fee', 1000.0)
-                st.write(f"Hygiene: {format_currency(hygiene_fee)}")
-                st.write(f"Total: {format_currency(row['Rent'] + hygiene_fee)}")
+                st.write(f"Hygiene: {format_currency(hygiene_fee)} (separate)")
                 status_class = {
                     "Active": "status-active",
                     "Pending": "status-pending",
@@ -2473,7 +2539,8 @@ def show_tenants():
                     new_rent = st.number_input("Rent (RWF)", value=float(current_rent), step=5000.0, key=f"edit_rent_{row['ID']}_{idx}")
                     
                     current_hygiene = row.get('Hygiene_Fee', 1000.0) if pd.notna(row.get('Hygiene_Fee', 1000.0)) else 1000.0
-                    new_hygiene = st.number_input("Hygiene Fee (RWF)", value=float(current_hygiene), step=500.0, key=f"edit_hygiene_{row['ID']}_{idx}")
+                    new_hygiene = st.number_input("Hygiene Fee (RWF) - Separate", value=float(current_hygiene), step=500.0, key=f"edit_hygiene_{row['ID']}_{idx}")
+                    st.caption("💡 Hygiene Fee is collected separately from rent")
                     
                     status_options = ["Active", "Pending", "In Progress", "New"]
                     try:
