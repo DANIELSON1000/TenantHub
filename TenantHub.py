@@ -108,6 +108,30 @@ def save_all_data():
         print(f"Error saving data: {e}")
         return False
 
+def ensure_payment_columns():
+    """Ensure all required columns exist in payments DataFrame"""
+    if 'payments' in st.session_state and isinstance(st.session_state.payments, pd.DataFrame):
+        # Add missing columns with default values
+        if 'Payment_Type' not in st.session_state.payments.columns:
+            st.session_state.payments['Payment_Type'] = 'Rent'
+        if 'Hygiene_Fee' not in st.session_state.payments.columns:
+            st.session_state.payments['Hygiene_Fee'] = 0
+        if 'Payment_Time' not in st.session_state.payments.columns:
+            st.session_state.payments['Payment_Time'] = ''
+        
+        # For existing records without Payment_Type, set to 'Rent' if amount seems like rent
+        # or try to determine based on Hygiene_Fee
+        for idx in st.session_state.payments.index:
+            if pd.isna(st.session_state.payments.loc[idx, 'Payment_Type']) or st.session_state.payments.loc[idx, 'Payment_Type'] == '':
+                # If Hygiene_Fee > 0, it's likely a hygiene payment
+                if st.session_state.payments.loc[idx, 'Hygiene_Fee'] > 0:
+                    st.session_state.payments.loc[idx, 'Payment_Type'] = 'Hygiene'
+                else:
+                    st.session_state.payments.loc[idx, 'Payment_Type'] = 'Rent'
+        
+        # Convert to string type
+        st.session_state.payments['Payment_Type'] = st.session_state.payments['Payment_Type'].astype(str)
+
 def load_all_data():
     """Load all data from CSV files"""
     try:
@@ -122,14 +146,8 @@ def load_all_data():
         if 'payments' not in st.session_state or st.session_state.payments.empty:
             st.session_state.payments = load_data_from_csv('payments.csv', get_default_payments())
         
-        # Ensure columns exist in payments
-        if 'payments' in st.session_state and isinstance(st.session_state.payments, pd.DataFrame):
-            if 'Payment_Time' not in st.session_state.payments.columns:
-                st.session_state.payments['Payment_Time'] = ''
-            if 'Payment_Type' not in st.session_state.payments.columns:
-                st.session_state.payments['Payment_Type'] = 'Rent'
-            if 'Hygiene_Fee' not in st.session_state.payments.columns:
-                st.session_state.payments['Hygiene_Fee'] = 0
+        # Ensure all payment columns exist
+        ensure_payment_columns()
         
         # Ensure Property columns exist in tenants
         if 'tenants' in st.session_state and isinstance(st.session_state.tenants, pd.DataFrame):
@@ -617,7 +635,7 @@ def send_tenant_info_email(tenant_name, email):
                     <tr><td><strong>Unit:</strong></td><td>{tenant_data['Unit']}</td></tr>
                     <tr><td><strong>Status:</strong></td><td>{tenant_data['Status']}</td></tr>
                     <tr><td><strong>Monthly Rent:</strong></td><td>{format_currency(tenant_data['Rent'])}</td></tr>
-                    <tr><td><strong>Hygiene Fee:</strong></td><td>{format_currency(tenant_data.get('Hygiene_Fee', 1000.0))}</td></tr>
+                    <tr><td><strong>Hygiene Fee (Separate):</strong></td><td>{format_currency(tenant_data.get('Hygiene_Fee', 1000.0))}</td></tr>
                     <tr><td><strong>Move-in Date:</strong></td><td>{tenant_data['Move_In_Date']}</td></tr>
                 </table>
                 
@@ -966,6 +984,10 @@ def init_data():
         st.session_state.maintenance = load_data_from_csv('maintenance.csv', get_default_maintenance())
     if 'payments' not in st.session_state:
         st.session_state.payments = load_data_from_csv('payments.csv', get_default_payments())
+    
+    # Ensure all payment columns exist
+    ensure_payment_columns()
+    
     if 'agreements' not in st.session_state:
         st.session_state.agreements = {}
 
@@ -1001,6 +1023,7 @@ def upload_csv(df_type):
                     st.session_state.maintenance = df
                 elif df_type == 'Payments':
                     st.session_state.payments = df
+                    ensure_payment_columns()
                 save_all_data()
                 st.rerun()
         except Exception as e:
@@ -1168,6 +1191,9 @@ def auto_generate_payments():
     if isinstance(st.session_state.tenants, pd.DataFrame) and not st.session_state.tenants.empty:
         new_payments_added = 0
         
+        # Ensure payment columns exist
+        ensure_payment_columns()
+        
         for _, tenant in st.session_state.tenants.iterrows():
             if tenant['Status'] == 'Active':
                 current_month = datetime.now().strftime('%Y-%m')
@@ -1237,10 +1263,7 @@ def mark_payment_as_paid(payment_id):
     try:
         if isinstance(st.session_state.payments, pd.DataFrame) and not st.session_state.payments.empty:
             # Ensure columns exist
-            if 'Payment_Time' not in st.session_state.payments.columns:
-                st.session_state.payments['Payment_Time'] = ''
-            if 'Payment_Type' not in st.session_state.payments.columns:
-                st.session_state.payments['Payment_Type'] = 'Rent'
+            ensure_payment_columns()
             
             df = st.session_state.payments
             idx = df[df['ID'] == payment_id].index
@@ -1638,6 +1661,7 @@ def show_metrics():
     overdue = 0
     
     if isinstance(payments_df, pd.DataFrame) and not payments_df.empty:
+        ensure_payment_columns()
         today = datetime.now().date()
         for _, row in payments_df.iterrows():
             if row['Status'] == 'Paid':
@@ -2020,6 +2044,9 @@ def show_payments():
     st.markdown('<div class="main-content">', unsafe_allow_html=True)
     st.markdown('<h2 class="section-header">💰 Payment Management</h2>', unsafe_allow_html=True)
     
+    # Ensure payment columns exist
+    ensure_payment_columns()
+    
     show_reminders()
     
     col1, col2 = st.columns([3, 1])
@@ -2099,6 +2126,9 @@ def show_payments():
             show_email_report_section()
     
     if isinstance(st.session_state.payments, pd.DataFrame) and not st.session_state.payments.empty:
+        # Ensure columns exist before filtering
+        ensure_payment_columns()
+        
         # Separate rent and hygiene payments
         rent_payments = st.session_state.payments[st.session_state.payments['Payment_Type'] == 'Rent']
         hygiene_payments = st.session_state.payments[st.session_state.payments['Payment_Type'] == 'Hygiene']
